@@ -4,7 +4,7 @@ mod migrations;
 
 use std::fs;
 
-use tauri::{api::path::app_data_dir, AppHandle, State};
+use tauri::{path::app_data_dir, AppHandle, State};
 
 const DATABASE_FILE: &str = "projectlib.db";
 
