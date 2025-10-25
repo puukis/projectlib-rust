@@ -51,7 +51,17 @@ importers:
         specifier: ^6.0.0
         version: 6.4.1
 
-  packages/db: {}
+  packages/db:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.0.0
+        version: 2.9.0
+      '@tauri-apps/plugin-sql':
+        specifier: ^2.0.0
+        version: 2.3.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/shared:
     dependencies:
