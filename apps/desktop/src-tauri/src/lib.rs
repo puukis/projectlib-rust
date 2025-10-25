@@ -2,7 +2,7 @@
 
 mod migrations;
 
-use std::{error::Error, fs};
+use std::{error::Error, fs, io};
 
 use tauri::{AppHandle, Manager, State};
 
@@ -30,9 +30,12 @@ fn prepare_database(app: &AppHandle) -> Result<String, Box<dyn Error>> {
     fs::create_dir_all(&data_dir)?;
 
     let db_path = data_dir.join(DATABASE_FILE);
-    let path_str = db_path
-        .to_str()
-        .ok_or_else(|| "database path contains invalid UTF-8".into())?;
+    let path_str = db_path.into_os_string().into_string().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "database path contains invalid UTF-8",
+        )
+    })?;
 
     Ok(format!("sqlite:{path_str}"))
 }
