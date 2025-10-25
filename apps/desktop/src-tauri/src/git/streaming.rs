@@ -1,5 +1,5 @@
 use crate::git::{
-    auth::{collect_cleanup, merge_auth_env, GitAuth},
+    auth::{collect_cleanup, merge_auth_env},
     models::{
         GitCommandHandle, GitError, GitErrorResponse, GitStreamEvent, GitStreamEventKind,
         GitStreamRequest,
@@ -8,7 +8,8 @@ use crate::git::{
     util,
 };
 use std::collections::HashMap;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
+use tauri::Emitter;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use uuid::Uuid;
 
@@ -73,7 +74,7 @@ pub async fn run_streaming_command(
                         exit_code: None,
                         success: None,
                     };
-                    let _ = app_handle.emit_all(&event_name, payload);
+                    let _ = app_handle.emit(&event_name, payload);
                 }
                 CommandEvent::Stderr(line) => {
                     let payload = GitStreamEvent {
@@ -83,7 +84,7 @@ pub async fn run_streaming_command(
                         exit_code: None,
                         success: None,
                     };
-                    let _ = app_handle.emit_all(&event_name, payload);
+                    let _ = app_handle.emit(&event_name, payload);
                 }
                 CommandEvent::Terminated(payload) => {
                     let success = payload.code.unwrap_or(-1) == 0;
@@ -94,7 +95,7 @@ pub async fn run_streaming_command(
                         exit_code: payload.code,
                         success: Some(success),
                     };
-                    let _ = app_handle.emit_all(&event_name, payload);
+                    let _ = app_handle.emit(&event_name, payload);
                 }
                 CommandEvent::Error(message) => {
                     let payload = GitStreamEvent {
@@ -104,7 +105,7 @@ pub async fn run_streaming_command(
                         exit_code: None,
                         success: None,
                     };
-                    let _ = app_handle.emit_all(&event_name, payload);
+                    let _ = app_handle.emit(&event_name, payload);
                 }
             }
         }
