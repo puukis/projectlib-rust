@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod git;
 mod migrations;
 
 use std::{error::Error, fs, io};
@@ -51,6 +52,8 @@ pub fn run() {
                 url: db_url.clone(),
             });
 
+            app.manage(git::GitService::new());
+
             app_handle.plugin(
                 tauri_plugin_sql::Builder::new()
                     .add_migrations(&db_url, migrations::definitions())
@@ -61,7 +64,25 @@ pub fn run() {
         })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_pty::init())
-        .invoke_handler(tauri::generate_handler![ping, resolve_database_url])
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            resolve_database_url,
+            git::git_path_info,
+            git::git_set_path,
+            git::git_detect_repository,
+            git::git_status,
+            git::git_log,
+            git::git_branches,
+            git::git_switch_branch,
+            git::git_checkout,
+            git::git_stash_list,
+            git::git_stash_push,
+            git::git_stash_apply,
+            git::git_remote_list,
+            git::git_fetch_all,
+            git::git_pull,
+            git::git_push,
+        ])
         .run(context)
         .expect("error while running Projectlib");
 }
