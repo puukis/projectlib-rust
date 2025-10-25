@@ -1,0 +1,12 @@
+{
+  "name": "projectlib",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter apps/desktop dev",
+    "build": "pnpm --filter apps/desktop build",
+    "tauri:dev": "pnpm --filter apps/desktop tauri:dev",
+    "tauri:build": "pnpm --filter apps/desktop tauri:build"
+  }
+}
