@@ -52,7 +52,7 @@ pub fn run() {
                 url: db_url.clone(),
             });
 
-            app.manage(git::GitService::new());
+            app.manage(git::service::GitService::new());
 
             app_handle.plugin(
                 tauri_plugin_sql::Builder::new()
@@ -67,21 +67,21 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping,
             resolve_database_url,
-            git::git_path_info,
-            git::git_set_path,
-            git::git_detect_repository,
-            git::git_status,
-            git::git_log,
-            git::git_branches,
-            git::git_switch_branch,
-            git::git_checkout,
-            git::git_stash_list,
-            git::git_stash_push,
-            git::git_stash_apply,
-            git::git_remote_list,
-            git::git_fetch_all,
-            git::git_pull,
-            git::git_push,
+            git::operations::git_path_info,
+            git::operations::git_set_path,
+            git::operations::git_detect_repository,
+            git::operations::git_status,
+            git::operations::git_log,
+            git::operations::git_branches,
+            git::operations::git_switch_branch,
+            git::operations::git_checkout,
+            git::operations::git_stash_list,
+            git::operations::git_stash_push,
+            git::operations::git_stash_apply,
+            git::operations::git_remote_list,
+            git::operations::git_fetch_all,
+            git::operations::git_pull,
+            git::operations::git_push,
         ])
         .run(context)
         .expect("error while running Projectlib");
