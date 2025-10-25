@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schemas.tauri.app/capability/1",
+  "identifier": "default",
+  "description": "Default capability granting core and shell permissions for the Projectlib desktop app.",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "shell:allow-execute",
+    "shell:allow-spawn"
+  ]
+}
