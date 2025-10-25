@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@projectlib/shared": ["../../packages/shared/src"],
+      "@projectlib/ui": ["../../packages/ui/src"]
+    },
+    "types": ["svelte"]
+  },
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.js",
+    "svelte.config.js",
+    "vite.config.ts"
+  ]
+}

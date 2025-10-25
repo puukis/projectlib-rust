@@ -1,0 +1,11 @@
+{
+  "name": "@projectlib/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "svelte": "^5.41.4"
+  }
+}

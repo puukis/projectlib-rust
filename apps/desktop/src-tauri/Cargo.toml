@@ -1,0 +1,18 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Projectlib Desktop App"
+
+[lib]
+name = "desktop_lib"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tauri = { version = "2.9.1", features = ["wry"] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-shell = "2.3.1"
+tauri-plugin-pty = "0.1.1"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

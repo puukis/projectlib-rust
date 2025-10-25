@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.target/
+target/
+.turbo/
+
+# Logs
+*.log
+
+# Databases
+*.sqlite
+*.db
+*.db-shm
+*.db-wal
+
+# Binaries and archives
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.zip
+*.exe
+*.dmg
+*.app
+*.pkg
+*.msi
+*.node
+*.dll
+*.dylib
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE directories
+.idea/
+.vscode/
+*.iml
+

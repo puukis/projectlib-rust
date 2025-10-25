@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schemas.tauri.app/config/2",
+  "productName": "Projectlib",
+  "version": "0.1.0",
+  "identifier": "com.projectlib.desktop",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Projectlib Desktop",
+        "width": 960,
+        "height": 640,
+        "resizable": true
+      }
+    ]
+  },
+  "plugins": {
+    "sql": {
+      "preload": []
+    }
+  }
+}
