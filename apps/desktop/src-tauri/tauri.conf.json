@@ -17,9 +17,34 @@
       }
     ]
   },
+  "security": {
+    "permissions": {
+      "default": [
+        "core:default",
+        "shell:allow-execute",
+        "shell:allow-spawn"
+      ]
+    }
+  },
   "plugins": {
     "sql": {
       "preload": []
+    },
+    "shell": {
+      "scope": {
+        "allow": [
+          {
+            "name": "git",
+            "cmd": "git",
+            "args": true
+          },
+          {
+            "name": "git-powershell",
+            "cmd": "powershell.exe",
+            "args": true
+          }
+        ]
+      }
     }
   }
 }
