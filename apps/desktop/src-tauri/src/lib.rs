@@ -21,7 +21,9 @@ use log::{error, info};
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, State};
 #[cfg(feature = "desktop")]
-use tauri_plugin_log::{Builder as LogBuilder, Target as LogTarget};
+use tauri_plugin_log::{
+    Builder as LogBuilder, Target as LogTarget, TargetKind as LogTargetKind,
+};
 
 #[cfg(feature = "desktop")]
 const DATABASE_FILE: &str = "projectlib.db";
@@ -76,7 +78,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             LogBuilder::new()
-                .targets([LogTarget::Stdout, LogTarget::LogDir])
+                .targets([
+                    LogTarget::new(LogTargetKind::Stdout),
+                    LogTarget::new(LogTargetKind::LogDir { file_name: None }),
+                ])
                 .level(log::LevelFilter::Info)
                 .build(),
         )
