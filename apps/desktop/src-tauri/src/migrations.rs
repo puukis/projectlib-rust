@@ -6,7 +6,7 @@ pub enum MigrationKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MigrationDefinition {
-    pub version: i32,
+    pub version: i64,
     pub description: &'static str,
     pub sql: &'static str,
     pub kind: MigrationKind,
