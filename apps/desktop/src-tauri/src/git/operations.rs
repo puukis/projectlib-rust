@@ -496,7 +496,7 @@ pub async fn git_run(
         message
     })?;
 
-    let mut command = app
+    let command = app
         .shell()
         .command(&config.executable.program)
         .args(config.executable.prefix_args.clone())
