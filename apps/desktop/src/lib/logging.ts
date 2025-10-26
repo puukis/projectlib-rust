@@ -26,16 +26,85 @@ function logToConsole(level: 'log' | 'warn' | 'error' | 'debug', msg: string, kv
   else console.log(text);
 }
 
+function toErrorMetadata(err: unknown): {
+  message?: string;
+  name?: string;
+  stack?: string;
+  cause?: unknown;
+  raw?: unknown;
+} {
+  if (err instanceof Error) {
+    return {
+      message: err.message,
+      name: err.name,
+      stack: err.stack,
+      cause: (err as { cause?: unknown }).cause,
+    };
+  }
+
+  if (typeof err === 'string') {
+    return { message: err };
+  }
+
+  if (typeof err === 'object' && err !== null) {
+    const maybeMessage =
+      'message' in err && typeof (err as { message?: unknown }).message === 'string'
+        ? ((err as { message?: string }).message as string)
+        : undefined;
+    const maybeName =
+      'name' in err && typeof (err as { name?: unknown }).name === 'string'
+        ? ((err as { name?: string }).name as string)
+        : undefined;
+    const maybeStack =
+      'stack' in err && typeof (err as { stack?: unknown }).stack === 'string'
+        ? ((err as { stack?: string }).stack as string)
+        : undefined;
+    const maybeCause = 'cause' in err ? (err as { cause?: unknown }).cause : undefined;
+
+    return {
+      message: maybeMessage,
+      name: maybeName,
+      stack: maybeStack,
+      cause: maybeCause,
+      raw: err,
+    };
+  }
+
+  return { raw: err };
+}
+
+function normalizeCause(cause: unknown): string | undefined {
+  if (cause === undefined) return undefined;
+  if (cause instanceof Error) return `${cause.name}: ${cause.message}`;
+  if (typeof cause === 'string') return cause;
+
+  try {
+    return JSON.stringify(cause);
+  } catch {
+    return String(cause);
+  }
+}
+
+function sanitizeRaw(raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (raw instanceof Error) return `${raw.name}: ${raw.message}`;
+  if (typeof raw === 'string') return raw;
+
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return String(raw);
+  }
+}
+
 async function sendLog(
   level: 'info' | 'warn' | 'error' | 'debug',
   fn: typeof info,
   msg: string,
   kv: KeyValues = {},
 ) {
-  if (!hasTauriBridge()) {
-    logToConsole(level === 'info' ? 'log' : level, msg, kv);
-    return;
-  }
+  logToConsole(level === 'info' ? 'log' : level, msg, kv);
+  if (!hasTauriBridge()) return;
   try {
     await fn(msg, { keyValues: serializeKeyValues(kv) });
   } catch (err) {
@@ -69,13 +138,24 @@ function serializeKeyValues(values: KeyValues): Record<string, string> {
 export async function setupLogging() {
   if (import.meta.env.DEV && canAttachConsole()) await attachConsole();
   window.addEventListener('error', (e) => {
-    if (e?.error) {
-      void sendLog('error', error, 'ui:window:error', {
-        msg: String(e.error),
-        file: e.filename,
-        line: e.lineno,
-      });
-    }
+    const err = e?.error;
+    const metadata = toErrorMetadata(err);
+    const message = metadata.message ?? e.message ?? String(err ?? 'Unknown error');
+
+    void sendLog('error', error, 'ui:window:error', {
+      msg: message,
+      name: metadata.name,
+      stack: metadata.stack,
+      cause: normalizeCause(metadata.cause),
+      raw: sanitizeRaw(metadata.raw),
+      file: e.filename,
+      line: e.lineno,
+      column: e.colno,
+      type: e.type,
+      isTrusted: e.isTrusted,
+      defaultPrevented: e.defaultPrevented,
+      timeStamp: e.timeStamp,
+    });
   });
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent | any) => {
     void sendLog('error', error, 'ui:promise:unhandled', { reason: String(e?.reason ?? e) });
