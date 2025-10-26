@@ -654,7 +654,7 @@
 
     try {
       const result = await invoke("git_detect_repository", {
-        request: { repository_path: repoPath }
+        request: { repositoryPath: repoPath }
       });
       repoInfo = GitRepositoryInfoSchema.parse(result);
     } catch (err) {
@@ -672,7 +672,7 @@
     }
 
     try {
-      const result = await invoke("git_status", { repository_path: repoPath });
+      const result = await invoke("git_status", { repositoryPath: repoPath });
       status = GitStatusResponseSchema.parse(result);
     } catch (err) {
       statusError = err instanceof Error ? err.message : String(err);
