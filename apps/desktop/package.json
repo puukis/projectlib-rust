@@ -13,9 +13,11 @@
   "dependencies": {
     "@projectlib/shared": "workspace:*",
     "@projectlib/ui": "workspace:*",
+    "@projectlib/db": "workspace:*",
     "@tauri-apps/api": "2.9.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
+    "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "svelte": "^5.41.4",
     "tauri-pty": "0.1.1",

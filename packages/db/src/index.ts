@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Database } from "@tauri-apps/plugin-sql";
+import Database from "@tauri-apps/plugin-sql";
 import { z } from "zod";
 
 const projectRowSchema = z.object({
