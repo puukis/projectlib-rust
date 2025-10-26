@@ -8,9 +8,43 @@ type TauriWindow = Window & {
   };
 };
 
-function canAttachConsole() {
+function hasTauriBridge() {
+  if (typeof window === 'undefined') return false;
   const tauriWindow = window as TauriWindow;
   return typeof tauriWindow.__TAURI_INTERNALS__?.transformCallback === 'function';
+}
+
+function logToConsole(level: 'log' | 'warn' | 'error' | 'debug', msg: string, kv: KeyValues) {
+  if (!import.meta.env.DEV) return;
+  const serialized = serializeKeyValues(kv);
+  const parts = Object.entries(serialized).map(([key, value]) => `${key}=${value}`);
+  const suffix = parts.length > 0 ? ` ${parts.join(' ')}` : '';
+  const text = `[${msg}]${suffix}`;
+  if (level === 'warn') console.warn(text);
+  else if (level === 'error') console.error(text);
+  else if (level === 'debug') console.debug(text);
+  else console.log(text);
+}
+
+async function sendLog(
+  level: 'info' | 'warn' | 'error' | 'debug',
+  fn: typeof info,
+  msg: string,
+  kv: KeyValues = {},
+) {
+  if (!hasTauriBridge()) {
+    logToConsole(level === 'info' ? 'log' : level, msg, kv);
+    return;
+  }
+  try {
+    await fn(msg, { keyValues: serializeKeyValues(kv) });
+  } catch (err) {
+    logToConsole('warn', 'ui:log:failed', { level, msg, err: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function canAttachConsole() {
+  return hasTauriBridge();
 }
 
 function serializeKeyValues(values: KeyValues): Record<string, string> {
@@ -36,36 +70,33 @@ export async function setupLogging() {
   if (import.meta.env.DEV && canAttachConsole()) await attachConsole();
   window.addEventListener('error', (e) => {
     if (e?.error) {
-      error('ui:window:error', {
-        keyValues: serializeKeyValues({
-          msg: String(e.error),
-          file: e.filename,
-          line: e.lineno,
-        }),
+      void sendLog('error', error, 'ui:window:error', {
+        msg: String(e.error),
+        file: e.filename,
+        line: e.lineno,
       });
     }
   });
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent | any) => {
-    error('ui:promise:unhandled', {
-      keyValues: serializeKeyValues({ reason: String(e?.reason ?? e) }),
-    });
+    void sendLog('error', error, 'ui:promise:unhandled', { reason: String(e?.reason ?? e) });
   });
 }
 
 export async function logOk(msg: string, kv: KeyValues = {}) {
-  await info(msg, { keyValues: serializeKeyValues(kv) });
+  await sendLog('info', info, msg, kv);
 }
 
 export async function logWarn(msg: string, kv: KeyValues = {}) {
-  await warn(msg, { keyValues: serializeKeyValues(kv) });
+  await sendLog('warn', warn, msg, kv);
 }
 
 export async function logErr(msg: string, kv: KeyValues = {}) {
-  await error(msg, { keyValues: serializeKeyValues(kv) });
+  await sendLog('error', error, msg, kv);
 }
 
 export async function logDbg(msg: string, kv: KeyValues = {}) {
-  if (import.meta.env.DEV) await debug(msg, { keyValues: serializeKeyValues(kv) });
+  if (!import.meta.env.DEV) return;
+  await sendLog('debug', debug, msg, kv);
 }
 
 export async function safeExec<T>(
