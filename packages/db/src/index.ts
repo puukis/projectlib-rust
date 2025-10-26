@@ -224,6 +224,11 @@ export async function listRuns(projectId: string): Promise<RunConfig[]> {
   return rows.map(fromRunRow);
 }
 
+export async function deleteRunConfig(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(`DELETE FROM runs WHERE id = ?`, [id]);
+}
+
 export async function saveTerminal(terminal: Terminal): Promise<void> {
   const db = await getDatabase();
   const parsed = terminalSchema.parse(terminal);

@@ -2,6 +2,7 @@
 
 mod git;
 mod migrations;
+mod runs;
 mod terminal;
 
 use std::{error::Error, fs, io};
@@ -83,6 +84,7 @@ pub fn run() {
             git::operations::git_fetch_all,
             git::operations::git_pull,
             git::operations::git_push,
+            runs::detect_project_runs,
             terminal::terminal_default_shell,
         ])
         .run(context)
