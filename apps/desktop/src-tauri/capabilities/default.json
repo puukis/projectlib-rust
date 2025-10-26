@@ -12,6 +12,8 @@
     "sql:default",
     "sql:allow-load",
     "sql:allow-execute",
+    "log:default",
+    "log:allow-log",
     {
       "identifier": "shell:allow-execute",
       "allow": [
