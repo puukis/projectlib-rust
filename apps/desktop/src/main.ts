@@ -2,6 +2,8 @@ import "./app.css";
 import "@xterm/xterm/css/xterm.css";
 import App from "./App.svelte";
 
-const app = App.mount("#app");
+const app = new App({
+  target: document.getElementById("app")!,
+});
 
 export default app;
