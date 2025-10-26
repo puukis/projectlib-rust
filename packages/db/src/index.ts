@@ -42,6 +42,34 @@ const runSchema = z.object({
   updatedAt: z.number().int(),
 });
 
+const runStatusRowSchema = z.object({
+  project_id: z.string(),
+  status: z.string(),
+  last_run_id: z.string().nullable(),
+  last_command: z.string().nullable(),
+  last_args: z.string().nullable(),
+  last_env: z.string().nullable(),
+  last_cwd: z.string().nullable(),
+  last_exit_code: z.number().int().nullable(),
+  started_at: z.number().int().nullable(),
+  finished_at: z.number().int().nullable(),
+  updated_at: z.number().int(),
+});
+
+const runStatusSchema = z.object({
+  projectId: z.string(),
+  status: z.enum(["idle", "starting", "running", "succeeded", "failed", "stopped"]),
+  lastRunId: z.string().nullable(),
+  lastCommand: z.string().nullable(),
+  lastArgs: z.array(z.string()).default([]),
+  lastEnv: z.record(z.string(), z.string()).default({}),
+  lastCwd: z.string().nullable(),
+  lastExitCode: z.number().int().nullable(),
+  startedAt: z.number().int().nullable(),
+  finishedAt: z.number().int().nullable(),
+  updatedAt: z.number().int(),
+});
+
 const stringArraySchema = z.array(z.string());
 const stringRecordSchema = z.record(z.string(), z.string());
 
@@ -77,6 +105,8 @@ type ProjectRow = z.infer<typeof projectRowSchema>;
 export type Project = z.infer<typeof projectSchema>;
 type RunRow = z.infer<typeof runRowSchema>;
 export type RunConfig = z.infer<typeof runSchema>;
+type RunStatusRow = z.infer<typeof runStatusRowSchema>;
+export type RunStatus = z.infer<typeof runStatusSchema>;
 export type Terminal = z.infer<typeof terminalSchema>;
 type GitRemoteRow = z.infer<typeof gitRemoteRowSchema>;
 export type GitRemote = z.infer<typeof gitRemoteSchema>;
@@ -126,6 +156,30 @@ function fromRunRow(row: RunRow): RunConfig {
     env,
     cwd: parsed.cwd,
     lastExitCode: parsed.last_exit_code,
+    updatedAt: parsed.updated_at,
+  });
+}
+
+function fromRunStatusRow(row: RunStatusRow): RunStatus {
+  const parsed = runStatusRowSchema.parse(row);
+  const args = parsed.last_args
+    ? stringArraySchema.parse(JSON.parse(parsed.last_args))
+    : [];
+  const env = parsed.last_env
+    ? stringRecordSchema.parse(JSON.parse(parsed.last_env))
+    : {};
+
+  return runStatusSchema.parse({
+    projectId: parsed.project_id,
+    status: parsed.status as RunStatus["status"],
+    lastRunId: parsed.last_run_id,
+    lastCommand: parsed.last_command,
+    lastArgs: args,
+    lastEnv: env,
+    lastCwd: parsed.last_cwd,
+    lastExitCode: parsed.last_exit_code,
+    startedAt: parsed.started_at,
+    finishedAt: parsed.finished_at,
     updatedAt: parsed.updated_at,
   });
 }
@@ -227,6 +281,74 @@ export async function listRuns(projectId: string): Promise<RunConfig[]> {
 export async function deleteRunConfig(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute(`DELETE FROM runs WHERE id = ?`, [id]);
+}
+
+export async function updateRunOutcome(
+  id: string,
+  lastExitCode: number | null,
+  updatedAt: number,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.execute(
+    `UPDATE runs SET last_exit_code = ?, updated_at = ? WHERE id = ?`,
+    [lastExitCode, updatedAt, id],
+  );
+}
+
+export async function listRunStatuses(): Promise<RunStatus[]> {
+  const db = await getDatabase();
+  const rows = (await db.select(
+    `SELECT project_id, status, last_run_id, last_command, last_args, last_env, last_cwd, last_exit_code, started_at, finished_at, updated_at
+     FROM run_status`,
+  )) as RunStatusRow[];
+
+  return rows.map(fromRunStatusRow);
+}
+
+export async function getRunStatus(projectId: string): Promise<RunStatus | null> {
+  const db = await getDatabase();
+  const rows = (await db.select(
+    `SELECT project_id, status, last_run_id, last_command, last_args, last_env, last_cwd, last_exit_code, started_at, finished_at, updated_at
+     FROM run_status WHERE project_id = ? LIMIT 1`,
+    [projectId],
+  )) as RunStatusRow[];
+
+  const row = rows[0];
+  return row ? fromRunStatusRow(row) : null;
+}
+
+export async function saveRunStatus(status: RunStatus): Promise<void> {
+  const db = await getDatabase();
+  const parsed = runStatusSchema.parse(status);
+
+  await db.execute(
+    `INSERT INTO run_status (project_id, status, last_run_id, last_command, last_args, last_env, last_cwd, last_exit_code, started_at, finished_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(project_id) DO UPDATE SET
+       status = excluded.status,
+       last_run_id = excluded.last_run_id,
+       last_command = excluded.last_command,
+       last_args = excluded.last_args,
+       last_env = excluded.last_env,
+       last_cwd = excluded.last_cwd,
+       last_exit_code = excluded.last_exit_code,
+       started_at = excluded.started_at,
+       finished_at = excluded.finished_at,
+       updated_at = excluded.updated_at`,
+    [
+      parsed.projectId,
+      parsed.status,
+      parsed.lastRunId,
+      parsed.lastCommand,
+      JSON.stringify(parsed.lastArgs ?? []),
+      JSON.stringify(parsed.lastEnv ?? {}),
+      parsed.lastCwd,
+      parsed.lastExitCode,
+      parsed.startedAt,
+      parsed.finishedAt,
+      parsed.updatedAt,
+    ],
+  );
 }
 
 export async function saveTerminal(terminal: Terminal): Promise<void> {

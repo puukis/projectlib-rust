@@ -2,10 +2,24 @@ import { getProject } from "@projectlib/db";
 import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { writable, type Readable } from "svelte/store";
-import { spawn } from "tauri-pty";
+import { spawn, type IPty } from "tauri-pty";
 
 import { resolveTerminalTheme } from "./theme";
-import type { Disposable, ShellInfo, TerminalTab } from "./types";
+import type {
+  Disposable,
+  ShellInfo,
+  TerminalTab,
+  TerminalTabKind,
+} from "./types";
+
+interface ProcessOptions {
+  projectId: string;
+  title: string;
+  cwd: string;
+  shell: ShellInfo;
+  kind: TerminalTabKind;
+  spawn: (terminal: Terminal) => IPty | Promise<IPty>;
+}
 
 type ColorMode = "light" | "dark";
 
@@ -53,6 +67,64 @@ export class TerminalService {
     this.tabsStore.set(Array.from(this.tabMap.values()));
   }
 
+  private createTerminal(): Terminal {
+    return new Terminal({
+      allowProposedApi: true,
+      convertEol: true,
+      cursorBlink: true,
+      theme: resolveTerminalTheme(this.colorMode),
+      fontFamily: "Menlo, 'Fira Code', Consolas, monospace",
+      fontSize: 14,
+    });
+  }
+
+  private async createTabWithProcess(options: ProcessOptions): Promise<TerminalTab> {
+    const terminal = this.createTerminal();
+    const tabId = crypto.randomUUID();
+    const pty = await Promise.resolve(options.spawn(terminal));
+
+    const disposables: Disposable[] = [];
+
+    disposables.push(
+      pty.onData((data) => {
+        terminal.write(data);
+      }),
+    );
+
+    disposables.push(
+      terminal.onData((data) => {
+        try {
+          pty.write(data);
+        } catch (err) {
+          console.error("Failed to write to process", err);
+        }
+      }),
+    );
+
+    disposables.push(
+      pty.onExit(({ exitCode }) => {
+        const code = typeof exitCode === "number" ? exitCode : 0;
+        terminal.write(`\r\nProcess exited with code ${code}\r\n`);
+      }),
+    );
+
+    const tab: TerminalTab = {
+      id: tabId,
+      projectId: options.projectId,
+      title: options.title,
+      cwd: options.cwd,
+      shell: options.shell,
+      pty,
+      terminal,
+      disposables,
+      kind: options.kind,
+    };
+
+    this.tabMap.set(tabId, tab);
+    this.emitTabs();
+    return tab;
+  }
+
   private countProjectTabs(projectId: string): number {
     let count = 0;
     for (const tab of this.tabMap.values()) {
@@ -78,59 +150,56 @@ export class TerminalService {
     }
 
     const shell = await this.resolveShell();
-    const terminal = new Terminal({
-      allowProposedApi: true,
-      convertEol: true,
-      cursorBlink: true,
-      theme: resolveTerminalTheme(this.colorMode),
-      fontFamily: "Menlo, 'Fira Code', Consolas, monospace",
-      fontSize: 14,
-    });
-
-    const tabId = crypto.randomUUID();
     const labelIndex = this.countProjectTabs(projectId) + 1;
     const tabTitle = `${project.name} #${labelIndex}`;
 
-    const pty = spawn(shell.program, shell.args, {
-      cols: terminal.cols,
-      rows: terminal.rows,
-      cwd: project.path,
-    });
-
-    const disposables: Disposable[] = [];
-
-    disposables.push(
-      pty.onData((data) => {
-        terminal.write(data);
-      }),
-    );
-
-    disposables.push(
-      terminal.onData((data) => {
-        pty.write(data);
-      }),
-    );
-
-    disposables.push(
-      pty.onExit(({ exitCode }) => {
-        terminal.write(`\r\nProcess exited with code ${exitCode}\r\n`);
-      }),
-    );
-
-    const tab: TerminalTab = {
-      id: tabId,
+    return this.createTabWithProcess({
       projectId,
       title: tabTitle,
       cwd: project.path,
       shell,
-      pty,
-      terminal,
-      disposables,
+      kind: "shell",
+      spawn: (terminal) =>
+        spawn(shell.program, shell.args, {
+          cols: terminal.cols,
+          rows: terminal.rows,
+          cwd: project.path,
+        }),
+    });
+  }
+
+  async createRunTab(options: {
+    projectId: string;
+    title: string;
+    command: string;
+    args: string[];
+    cwd: string;
+    env: Record<string, string>;
+    spawnOverride?: (terminal: Terminal) => IPty | Promise<IPty>;
+  }): Promise<TerminalTab> {
+    const shell: ShellInfo = {
+      program: options.command,
+      args: options.args,
     };
 
-    this.tabMap.set(tabId, tab);
-    this.emitTabs();
-    return tab;
+    const spawnFactory = options.spawnOverride
+      ? options.spawnOverride
+      : (terminal: Terminal) =>
+          spawn(options.command, options.args, {
+            cols: terminal.cols,
+            rows: terminal.rows,
+            cwd: options.cwd,
+            env: options.env,
+          });
+
+    return this.createTabWithProcess({
+      projectId: options.projectId,
+      title: options.title,
+      cwd: options.cwd,
+      shell,
+      kind: "run",
+      spawn: spawnFactory,
+    });
   }
 
   write(id: string, data: string): void {

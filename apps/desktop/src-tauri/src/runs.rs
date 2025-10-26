@@ -17,7 +17,7 @@ pub struct RunSuggestion {
     pub reason: String,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn detect_project_runs(path: String) -> Result<Vec<RunSuggestion>, String> {
     let root = PathBuf::from(path);
 

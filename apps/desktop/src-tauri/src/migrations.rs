@@ -1,10 +1,23 @@
-use tauri_plugin_sql::{Migration, MigrationKind};
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MigrationKind {
+    Up,
+    Down,
+}
 
-pub fn definitions() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        description: "create core projectlib tables",
-        sql: r#"
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationDefinition {
+    pub version: i32,
+    pub description: &'static str,
+    pub sql: &'static str,
+    pub kind: MigrationKind,
+}
+
+pub fn definitions() -> Vec<MigrationDefinition> {
+    vec![
+        MigrationDefinition {
+            version: 1,
+            description: "create core projectlib tables",
+            sql: r#"
         PRAGMA foreign_keys = ON;
 
         CREATE TABLE IF NOT EXISTS projects (
@@ -51,6 +64,45 @@ pub fn definitions() -> Vec<Migration> {
             git_path TEXT
         );
         "#,
-        kind: MigrationKind::Up,
-    }]
+            kind: MigrationKind::Up,
+        },
+        MigrationDefinition {
+            version: 2,
+            description: "add run status tracking",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS run_status (
+            project_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            last_run_id TEXT,
+            last_command TEXT,
+            last_args TEXT,
+            last_env TEXT,
+            last_cwd TEXT,
+            last_exit_code INTEGER,
+            started_at INTEGER,
+            finished_at INTEGER,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        "#,
+            kind: MigrationKind::Up,
+        },
+    ]
+}
+
+#[cfg(feature = "desktop")]
+impl From<MigrationDefinition> for tauri_plugin_sql::Migration {
+    fn from(value: MigrationDefinition) -> Self {
+        let kind = match value.kind {
+            MigrationKind::Up => tauri_plugin_sql::MigrationKind::Up,
+            MigrationKind::Down => tauri_plugin_sql::MigrationKind::Down,
+        };
+
+        tauri_plugin_sql::Migration {
+            version: value.version,
+            description: value.description,
+            sql: value.sql,
+            kind,
+        }
+    }
 }
