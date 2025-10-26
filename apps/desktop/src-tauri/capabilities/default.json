@@ -5,6 +5,10 @@
   "windows": ["*"],
   "permissions": [
     "core:default",
+    "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
     "sql:default",
     "sql:allow-load",
     "sql:allow-execute",
