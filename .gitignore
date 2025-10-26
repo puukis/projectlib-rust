@@ -17,7 +17,6 @@ target/
 *.db-wal
 
 # Binaries and archives
-*.png
 *.jpg
 *.jpeg
 *.gif
