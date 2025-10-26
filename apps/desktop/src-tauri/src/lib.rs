@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(feature = "desktop")]
+mod fs;
+#[cfg(feature = "desktop")]
 mod git;
 pub mod migrations;
 #[cfg(feature = "desktop")]
@@ -65,6 +67,7 @@ pub fn run() {
             });
 
             app.manage(git::service::GitService::new());
+            app.manage(fs::FsWatcherManager::new());
 
             let migrations: Vec<tauri_plugin_sql::Migration> = migrations::definitions()
                 .into_iter()
@@ -88,9 +91,15 @@ pub fn run() {
             git::operations::git_set_path,
             git::operations::git_detect_repository,
             git::operations::git_status,
+            git::operations::git_stage,
+            git::operations::git_unstage,
+            git::operations::git_commit,
+            git::operations::git_graph,
+            git::operations::git_commit_details,
             git::operations::git_log,
             git::operations::git_branches,
             git::operations::git_switch_branch,
+            git::operations::git_delete_branch,
             git::operations::git_checkout,
             git::operations::git_stash_list,
             git::operations::git_stash_push,
@@ -99,6 +108,8 @@ pub fn run() {
             git::operations::git_fetch_all,
             git::operations::git_pull,
             git::operations::git_push,
+            fs::register_project_root,
+            fs::unregister_project_root,
             runs::detect_project_runs,
             terminal::terminal_default_shell,
         ])

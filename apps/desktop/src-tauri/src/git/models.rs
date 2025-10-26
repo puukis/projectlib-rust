@@ -108,6 +108,22 @@ pub struct GitLogResponse {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct GitGraphEntry {
+    pub commit: String,
+    pub parents: Vec<String>,
+    pub author: String,
+    pub date: String,
+    pub subject: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitGraphResponse {
+    pub entries: Vec<GitGraphEntry>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct GitBranchesResponse {
     pub current: Option<String>,
     pub local: Vec<String>,
@@ -173,6 +189,23 @@ pub struct GitCommandOutcome {
 }
 
 #[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitFileChange {
+    pub status: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitDetails {
+    pub commit: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+    pub files: Vec<GitCommitFileChange>,
+}
+
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum GitStreamEventKind {
     Stdout,
@@ -215,6 +248,14 @@ pub struct GitCheckoutRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GitDeleteBranchRequest {
+    pub repository_path: String,
+    pub branch: String,
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitStashPushRequest {
     pub repository_path: String,
     pub message: Option<String>,
@@ -243,6 +284,27 @@ pub struct GitStreamRequest {
     pub branch: Option<String>,
     pub auth: Option<crate::git::auth::GitAuth>,
     pub command_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStageRequest {
+    pub repository_path: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRequest {
+    pub repository_path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitDetailsRequest {
+    pub repository_path: String,
+    pub commit: String,
 }
 
 #[derive(Debug, Clone)]

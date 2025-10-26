@@ -8,8 +8,8 @@ use crate::git::{
     util,
 };
 use std::collections::HashMap;
-use tauri::{AppHandle, State};
 use tauri::Emitter;
+use tauri::{AppHandle, State};
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use uuid::Uuid;
 

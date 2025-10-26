@@ -55,6 +55,22 @@ export const GitLogResponseSchema = z.object({
 
 export type GitLogResponse = z.infer<typeof GitLogResponseSchema>;
 
+export const GitGraphEntrySchema = z.object({
+  commit: z.string(),
+  parents: z.array(z.string()),
+  author: z.string(),
+  date: z.string(),
+  subject: z.string()
+});
+
+export type GitGraphEntry = z.infer<typeof GitGraphEntrySchema>;
+
+export const GitGraphResponseSchema = z.object({
+  entries: z.array(GitGraphEntrySchema)
+});
+
+export type GitGraphResponse = z.infer<typeof GitGraphResponseSchema>;
+
 export const GitBranchesResponseSchema = z.object({
   current: z.string().nullable(),
   local: z.array(z.string()),
@@ -106,6 +122,23 @@ export const GitCommandOutcomeSchema = z.object({
 });
 
 export type GitCommandOutcome = z.infer<typeof GitCommandOutcomeSchema>;
+
+export const GitCommitFileChangeSchema = z.object({
+  status: z.string(),
+  path: z.string()
+});
+
+export type GitCommitFileChange = z.infer<typeof GitCommitFileChangeSchema>;
+
+export const GitCommitDetailsSchema = z.object({
+  commit: z.string(),
+  author: z.string(),
+  date: z.string(),
+  message: z.string(),
+  files: z.array(GitCommitFileChangeSchema)
+});
+
+export type GitCommitDetails = z.infer<typeof GitCommitDetailsSchema>;
 
 export const GitCommandHandleSchema = z.object({
   commandId: z.string()

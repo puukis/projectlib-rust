@@ -87,6 +87,20 @@ pub fn definitions() -> Vec<MigrationDefinition> {
         "#,
             kind: MigrationKind::Up,
         },
+        MigrationDefinition {
+            version: 3,
+            description: "add editor state table",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS editor_state (
+            id TEXT PRIMARY KEY DEFAULT 'global',
+            open_files TEXT,
+            active_file TEXT,
+            view_state TEXT,
+            updated_at INTEGER NOT NULL
+        );
+        "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

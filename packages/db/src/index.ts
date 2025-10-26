@@ -101,6 +101,27 @@ const settingsSchema = z.object({
   gitPath: z.string().nullable(),
 });
 
+const editorFileStateSchema = z.object({
+  path: z.string(),
+  language: z.string().nullable(),
+});
+
+const editorStateRowSchema = z.object({
+  id: z.string(),
+  open_files: z.string().nullable(),
+  active_file: z.string().nullable(),
+  view_state: z.string().nullable(),
+  updated_at: z.number().int(),
+});
+
+const editorStateSchema = z.object({
+  id: z.string().default("global"),
+  openFiles: z.array(editorFileStateSchema),
+  activeFile: z.string().nullable(),
+  viewState: z.record(z.string(), z.unknown()).default({}),
+  updatedAt: z.number().int(),
+});
+
 type ProjectRow = z.infer<typeof projectRowSchema>;
 export type Project = z.infer<typeof projectSchema>;
 type RunRow = z.infer<typeof runRowSchema>;
@@ -111,6 +132,9 @@ export type Terminal = z.infer<typeof terminalSchema>;
 type GitRemoteRow = z.infer<typeof gitRemoteRowSchema>;
 export type GitRemote = z.infer<typeof gitRemoteSchema>;
 export type Settings = z.infer<typeof settingsSchema>;
+type EditorStateRow = z.infer<typeof editorStateRowSchema>;
+export type EditorFileState = z.infer<typeof editorFileStateSchema>;
+export type EditorState = z.infer<typeof editorStateSchema>;
 
 let databasePromise: Promise<Database> | null = null;
 
@@ -191,6 +215,24 @@ function fromGitRemoteRow(row: GitRemoteRow): GitRemote {
     projectId: parsed.project_id,
     name: parsed.name,
     url: parsed.url,
+  });
+}
+
+function fromEditorStateRow(row: EditorStateRow): EditorState {
+  const parsed = editorStateRowSchema.parse(row);
+  const openFiles = parsed.open_files
+    ? editorFileStateSchema.array().parse(JSON.parse(parsed.open_files))
+    : [];
+  const viewState = parsed.view_state
+    ? z.record(z.string(), z.unknown()).parse(JSON.parse(parsed.view_state))
+    : {};
+
+  return editorStateSchema.parse({
+    id: parsed.id,
+    openFiles,
+    activeFile: parsed.active_file,
+    viewState,
+    updatedAt: parsed.updated_at,
   });
 }
 
@@ -390,5 +432,36 @@ export async function saveSettings(settings: Settings): Promise<void> {
        telemetry_enabled = excluded.telemetry_enabled,
        git_path = excluded.git_path`,
     [parsed.id, parsed.theme, telemetryValue, parsed.gitPath],
+  );
+}
+
+export async function loadEditorState(): Promise<EditorState | null> {
+  const db = await getDatabase();
+  const rows = (await db.select(
+    `SELECT id, open_files, active_file, view_state, updated_at FROM editor_state WHERE id = 'global' LIMIT 1`,
+  )) as EditorStateRow[];
+
+  const row = rows[0];
+  return row ? fromEditorStateRow(row) : null;
+}
+
+export async function saveEditorState(state: EditorState): Promise<void> {
+  const db = await getDatabase();
+  const parsed = editorStateSchema.parse(state);
+  await db.execute(
+    `INSERT INTO editor_state (id, open_files, active_file, view_state, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       open_files = excluded.open_files,
+       active_file = excluded.active_file,
+       view_state = excluded.view_state,
+       updated_at = excluded.updated_at`,
+    [
+      parsed.id,
+      JSON.stringify(parsed.openFiles ?? []),
+      parsed.activeFile,
+      JSON.stringify(parsed.viewState ?? {}),
+      parsed.updatedAt,
+    ],
   );
 }

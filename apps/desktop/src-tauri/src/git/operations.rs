@@ -1,10 +1,11 @@
 use crate::git::{
     auth::{collect_cleanup, merge_auth_env, GitAuth},
     models::{
-        GitBranchRequest, GitBranchesResponse, GitCheckoutRequest, GitCommandOutcome, GitError,
-        GitErrorResponse, GitLogResponse, GitPathInfo, GitRemoteList, GitRepositoryInfo,
-        GitRepositoryRequest, GitStashApplyRequest, GitStashList, GitStashPushRequest,
-        GitStatusResponse, GitStreamRequest, GitSwitchResponse,
+        GitBranchRequest, GitBranchesResponse, GitCheckoutRequest, GitCommandOutcome,
+        GitCommitDetails, GitCommitDetailsRequest, GitCommitRequest, GitDeleteBranchRequest,
+        GitError, GitErrorResponse, GitGraphResponse, GitLogResponse, GitPathInfo, GitRemoteList,
+        GitRepositoryInfo, GitRepositoryRequest, GitStageRequest, GitStashApplyRequest,
+        GitStashList, GitStashPushRequest, GitStatusResponse, GitStreamRequest, GitSwitchResponse,
     },
     service::GitService,
     streaming::run_streaming_command,
@@ -92,13 +93,129 @@ pub async fn git_status(
         &app,
         &service,
         &repository_path,
-        vec!["status".into(), "--branch".into(), "--porcelain".into()],
+        vec![
+            "status".into(),
+            "--branch".into(),
+            "--porcelain=v1".into(),
+            "-z".into(),
+        ],
         None,
     )
     .await
     .map_err(GitErrorResponse::from)?;
 
     Ok(util::parse_status(&outcome.stdout))
+}
+
+#[tauri::command]
+pub async fn git_stage(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    request: GitStageRequest,
+) -> Result<GitCommandOutcome, GitErrorResponse> {
+    if request.paths.is_empty() {
+        return Err(GitErrorResponse {
+            message: "no paths provided".into(),
+        });
+    }
+
+    let mut args = vec!["add".into(), "--".into()];
+    for path in request.paths.iter() {
+        args.push(util::sanitize_arg(path, "path").map_err(GitErrorResponse::from)?);
+    }
+
+    run_git_capture(&app, &service, &request.repository_path, args, None)
+        .await
+        .map_err(GitErrorResponse::from)
+}
+
+#[tauri::command]
+pub async fn git_unstage(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    request: GitStageRequest,
+) -> Result<GitCommandOutcome, GitErrorResponse> {
+    if request.paths.is_empty() {
+        return Err(GitErrorResponse {
+            message: "no paths provided".into(),
+        });
+    }
+
+    let mut args = vec!["restore".into(), "--staged".into(), "--".into()];
+    for path in request.paths.iter() {
+        args.push(util::sanitize_arg(path, "path").map_err(GitErrorResponse::from)?);
+    }
+
+    run_git_capture(&app, &service, &request.repository_path, args, None)
+        .await
+        .map_err(GitErrorResponse::from)
+}
+
+#[tauri::command]
+pub async fn git_commit(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    request: GitCommitRequest,
+) -> Result<GitCommandOutcome, GitErrorResponse> {
+    if request.message.trim().is_empty() {
+        return Err(GitErrorResponse {
+            message: "commit message cannot be empty".into(),
+        });
+    }
+
+    let mut args = vec!["commit".into(), "-m".into()];
+    args.push(util::sanitize_arg(&request.message, "message").map_err(GitErrorResponse::from)?);
+
+    run_git_capture(&app, &service, &request.repository_path, args, None)
+        .await
+        .map_err(GitErrorResponse::from)
+}
+
+#[tauri::command]
+pub async fn git_graph(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    repository_path: String,
+) -> Result<GitGraphResponse, GitErrorResponse> {
+    let outcome = run_git_capture(
+        &app,
+        &service,
+        &repository_path,
+        vec![
+            "log".into(),
+            "--date=iso-strict".into(),
+            "--pretty=format:%H|%P|%an|%ad|%s".into(),
+            "-n".into(),
+            "200".into(),
+        ],
+        None,
+    )
+    .await
+    .map_err(GitErrorResponse::from)?;
+
+    Ok(util::parse_graph(&outcome.stdout))
+}
+
+#[tauri::command]
+pub async fn git_commit_details(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    request: GitCommitDetailsRequest,
+) -> Result<GitCommitDetails, GitErrorResponse> {
+    let mut args = vec![
+        "show".into(),
+        "--name-status".into(),
+        "--date=iso-strict".into(),
+        "--pretty=format:%H%n%an%n%ad%n%B".into(),
+        "--no-color".into(),
+        util::sanitize_arg(&request.commit, "commit").map_err(GitErrorResponse::from)?,
+    ];
+
+    let outcome = run_git_capture(&app, &service, &request.repository_path, args, None)
+        .await
+        .map_err(GitErrorResponse::from)?;
+
+    Ok(util::parse_commit_details(&outcome.stdout))
 }
 
 #[tauri::command]
@@ -170,6 +287,38 @@ pub async fn git_switch_branch(
         return Err(GitErrorResponse {
             message: if outcome.stderr.is_empty() {
                 "failed to switch branch".into()
+            } else {
+                outcome.stderr
+            },
+        });
+    }
+
+    Ok(GitSwitchResponse { branch })
+}
+
+#[tauri::command]
+pub async fn git_delete_branch(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    request: GitDeleteBranchRequest,
+) -> Result<GitSwitchResponse, GitErrorResponse> {
+    let mut args = vec!["branch".into()];
+    if request.force.unwrap_or(false) {
+        args.push("-D".into());
+    } else {
+        args.push("-d".into());
+    }
+    let branch = util::sanitize_arg(&request.branch, "branch").map_err(GitErrorResponse::from)?;
+    args.push(branch.clone());
+
+    let outcome = run_git_capture(&app, &service, &request.repository_path, args, None)
+        .await
+        .map_err(GitErrorResponse::from)?;
+
+    if !outcome.success {
+        return Err(GitErrorResponse {
+            message: if outcome.stderr.is_empty() {
+                "failed to delete branch".into()
             } else {
                 outcome.stderr
             },

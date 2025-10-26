@@ -1,0 +1,45 @@
+const extensionMap: Record<string, string> = {
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  json: "json",
+  css: "css",
+  scss: "scss",
+  sass: "scss",
+  less: "less",
+  html: "html",
+  svelte: "svelte",
+  vue: "html",
+  md: "markdown",
+  markdown: "markdown",
+  rs: "rust",
+  py: "python",
+  go: "go",
+  java: "java",
+  kt: "kotlin",
+  swift: "swift",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cxx: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  php: "php",
+  rb: "ruby",
+  sh: "shell",
+  bash: "shell",
+  zsh: "shell",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  sql: "sql",
+  xml: "xml",
+  ini: "ini",
+};
+
+export function detectLanguage(path: string): string {
+  const segments = path.split(".");
+  const ext = segments[segments.length - 1]?.toLowerCase() ?? "";
+  return extensionMap[ext] ?? "plaintext";
+}

@@ -68,10 +68,7 @@ fn detect_node(root: &Path, suggestions: &mut Vec<RunSuggestion>) {
                 args: vec!["run".into(), candidate.to_string()],
                 env: HashMap::new(),
                 cwd: Some(path_to_string(root)),
-                reason: format!(
-                    "Detected package.json with `{}` script",
-                    candidate
-                ),
+                reason: format!("Detected package.json with `{}` script", candidate),
             };
             push_unique(suggestions, suggestion);
             break;
@@ -213,7 +210,11 @@ fn detect_go(root: &Path, suggestions: &mut Vec<RunSuggestion>) {
 fn detect_dotnet(root: &Path, suggestions: &mut Vec<RunSuggestion>) {
     let mut csproj_dir: Option<PathBuf> = None;
 
-    for entry in WalkDir::new(root).max_depth(3).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(root)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
         if entry.file_type().is_file()
             && entry
                 .path()
