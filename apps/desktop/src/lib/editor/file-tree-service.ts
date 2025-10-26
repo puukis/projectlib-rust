@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { readDir, readTextFile, writeTextFile, type DirEntry } from "@tauri-apps/api/fs";
+import { readDir, readTextFile, writeTextFile, type DirEntry } from "@tauri-apps/plugin-fs";
 import { detectLanguage } from "./language";
 
 export type TreeNode = {
