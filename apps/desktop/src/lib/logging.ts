@@ -69,13 +69,21 @@ function serializeKeyValues(values: KeyValues): Record<string, string> {
 export async function setupLogging() {
   if (import.meta.env.DEV && canAttachConsole()) await attachConsole();
   window.addEventListener('error', (e) => {
-    if (e?.error) {
-      void sendLog('error', error, 'ui:window:error', {
-        msg: String(e.error),
-        file: e.filename,
-        line: e.lineno,
-      });
-    }
+    const err = e?.error;
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === 'string'
+          ? err
+          : e.message ?? String(err ?? 'Unknown error');
+
+    void sendLog('error', error, 'ui:window:error', {
+      msg: message,
+      file: e.filename,
+      line: e.lineno,
+      column: e.colno,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
   });
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent | any) => {
     void sendLog('error', error, 'ui:promise:unhandled', { reason: String(e?.reason ?? e) });
