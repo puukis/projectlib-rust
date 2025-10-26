@@ -8,7 +8,6 @@ import {
   type RunStatus,
   updateRunOutcome,
 } from "@projectlib/db";
-import { platform } from "@tauri-apps/api/os";
 import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { Terminal } from "@xterm/xterm";
 import { get, writable, type Readable } from "svelte/store";
@@ -453,7 +452,30 @@ class RunService {
 
   private async isWindows(): Promise<boolean> {
     if (!this.platformPromise) {
-      this.platformPromise = platform();
+      this.platformPromise = Promise.resolve(
+        (() => {
+          if (typeof navigator !== "undefined") {
+            const nav = navigator as Navigator & {
+              userAgentData?: { platform?: string };
+            };
+            const uaPlatform =
+              nav.userAgentData?.platform ?? nav.platform ?? nav.userAgent;
+            if (uaPlatform) {
+              return uaPlatform;
+            }
+          }
+
+          const nodeProcess =
+            typeof globalThis !== "undefined"
+              ? (globalThis as { process?: { platform?: string } }).process
+              : undefined;
+          if (nodeProcess?.platform) {
+            return nodeProcess.platform;
+          }
+
+          return "unknown";
+        })(),
+      );
     }
 
     try {

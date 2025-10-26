@@ -872,10 +872,11 @@
       <div class="section-header">
         <h2>Run commands</h2>
         {#if selectedProject}
-          <div class="run-header-control" on:click|stopPropagation={() => handleProjectRun(selectedProject)}>
+          <div class="run-header-control">
             <RunButton
               projectName={selectedProject.name}
               status={getRunState(selectedProject.id).status}
+              on:click|stopPropagation={() => handleProjectRun(selectedProject)}
             />
           </div>
         {/if}
