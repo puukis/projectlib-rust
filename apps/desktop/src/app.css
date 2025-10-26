@@ -1,12 +1,26 @@
 :root {
   font-family: system-ui, sans-serif;
   color-scheme: light dark;
+  --terminal-bg: #f8fafc;
+  --terminal-fg: #0f172a;
+  --terminal-cursor: #2563eb;
+  --terminal-selection: rgba(37, 99, 235, 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --terminal-bg: #0b1120;
+    --terminal-fg: #e2e8f0;
+    --terminal-cursor: #60a5fa;
+    --terminal-selection: rgba(96, 165, 250, 0.35);
+  }
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top, rgba(0, 150, 255, 0.08), transparent);
+  background: radial-gradient(circle at top, rgba(37, 99, 235, 0.12), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--terminal-bg) 85%, transparent), transparent);
 }
 
 main {

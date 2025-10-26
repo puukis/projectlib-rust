@@ -2,6 +2,9 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Shell } from "@projectlib/ui";
+  import { listProjects, upsertProject, type Project } from "@projectlib/db";
+  import TerminalTabs from "./components/TerminalTabs.svelte";
+  import { terminalService } from "./lib/terminal";
   import {
     PingSchema,
     type Ping,
@@ -21,6 +24,12 @@
   let repoError: string | null = null;
   let status: GitStatusResponse | null = null;
   let statusError: string | null = null;
+  let projects: Project[] = [];
+  let projectError: string | null = null;
+  let projectMessage: string | null = null;
+  let selectedProjectId: string | null = null;
+  let terminalError: string | null = null;
+  let savingProject = false;
 
   onMount(async () => {
     try {
@@ -28,14 +37,33 @@
       ping = PingSchema.parse({ message: response });
       const info = await invoke("git_path_info");
       gitInfo = GitPathInfoSchema.parse(info);
+      await loadProjects();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
   });
 
+  async function loadProjects() {
+    try {
+      projectError = null;
+      const loaded = await listProjects();
+      projects = loaded;
+      if (projects.length > 0) {
+        const firstId = projects[0].id;
+        if (!selectedProjectId || !projects.some((project) => project.id === selectedProjectId)) {
+          selectedProjectId = firstId;
+        }
+      }
+    } catch (err) {
+      projectError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   async function detectRepository() {
     repoError = null;
     repoInfo = null;
+    projectMessage = null;
+    projectError = null;
     if (!repoPath.trim()) {
       repoError = "Enter a folder path to inspect.";
       return;
@@ -54,6 +82,7 @@
   async function loadStatus() {
     statusError = null;
     status = null;
+    projectMessage = null;
     if (!repoPath.trim()) {
       statusError = "Enter a repository path first.";
       return;
@@ -64,6 +93,50 @@
       status = GitStatusResponseSchema.parse(result);
     } catch (err) {
       statusError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function saveRepositoryAsProject() {
+    if (!repoInfo?.isRepository || !repoInfo.worktreeRoot) {
+      projectMessage = "Detect a repository before saving it.";
+      return;
+    }
+
+    projectMessage = null;
+    savingProject = true;
+
+    try {
+      const existing = projects.find((project) => project.path === repoInfo.worktreeRoot);
+      const now = Date.now();
+      const projectId = existing?.id ?? crypto.randomUUID();
+      const pathSegments = repoInfo.worktreeRoot.split(/[/\\]/).filter(Boolean);
+      const name = existing?.name ?? pathSegments[pathSegments.length - 1] ?? "Repository";
+
+      await upsertProject({
+        id: projectId,
+        name,
+        path: repoInfo.worktreeRoot,
+        detectedLang: existing?.detectedLang ?? null,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      });
+
+      await loadProjects();
+      selectedProjectId = projectId;
+      projectMessage = existing ? "Project entry updated." : "Project saved.";
+    } catch (err) {
+      projectError = err instanceof Error ? err.message : String(err);
+    } finally {
+      savingProject = false;
+    }
+  }
+
+  async function handleCreateTerminal(projectId: string) {
+    terminalError = null;
+    try {
+      await terminalService.createTab(projectId);
+    } catch (err) {
+      terminalError = err instanceof Error ? err.message : String(err);
     }
   }
 </script>
@@ -111,6 +184,14 @@
       <div class="actions">
         <button type="button" on:click={detectRepository}>Check for .git</button>
         <button type="button" on:click={loadStatus}>Load status</button>
+        <button
+          type="button"
+          class="primary"
+          on:click={saveRepositoryAsProject}
+          disabled={!repoInfo?.isRepository || !repoInfo?.worktreeRoot || savingProject}
+        >
+          {savingProject ? "Saving…" : "Save as project"}
+        </button>
       </div>
       {#if repoError}
         <p class="error">{repoError}</p>
@@ -142,6 +223,23 @@
           <p>{status.isClean ? "Working tree clean" : "Changes present"}</p>
         </div>
       {/if}
+      {#if projectMessage}
+        <p class="note">{projectMessage}</p>
+      {/if}
+    </section>
+
+    <section class="panel">
+      <h2>Project terminals</h2>
+      {#if projectError}
+        <p class="error">{projectError}</p>
+      {:else}
+        <TerminalTabs
+          {projects}
+          bind:selectedProjectId
+          creatingError={terminalError}
+          onCreateTab={handleCreateTerminal}
+        />
+      {/if}
     </section>
   </Shell>
 </main>
@@ -155,10 +253,12 @@
   .panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid currentColor;
-    border-radius: 0.5rem;
+    gap: 0.9rem;
+    padding: 1.25rem;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--terminal-bg) 35%, transparent);
+    backdrop-filter: blur(6px);
   }
 
   dl {
@@ -183,37 +283,61 @@
   }
 
   input {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid currentColor;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
     border-radius: 0.5rem;
     font: inherit;
+    background: color-mix(in srgb, var(--terminal-bg) 80%, transparent);
   }
 
   .actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
   }
 
   button {
     padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid currentColor;
+    border-radius: 0.6rem;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
     background: transparent;
     cursor: pointer;
     font: inherit;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   }
 
-  button:hover {
-    background: rgba(0, 0, 0, 0.05);
+  button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--terminal-bg) 85%, transparent);
+    border-color: color-mix(in srgb, currentColor 35%, transparent);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  button.primary {
+    background: color-mix(in srgb, var(--terminal-cursor) 80%, transparent);
+    color: #fff;
+    border-color: color-mix(in srgb, var(--terminal-cursor) 60%, transparent);
+  }
+
+  button.primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--terminal-cursor) 90%, transparent);
   }
 
   .error {
-    color: #b91c1c;
+    color: #f87171;
+  }
+
+  .note {
+    color: color-mix(in srgb, var(--terminal-cursor) 80%, currentColor 20%);
+    font-size: 0.95rem;
   }
 
   .result {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
   }
 </style>
