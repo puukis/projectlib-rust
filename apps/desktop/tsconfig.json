@@ -4,7 +4,8 @@
     "baseUrl": ".",
     "paths": {
       "@projectlib/shared": ["../../packages/shared/src"],
-      "@projectlib/ui": ["../../packages/ui/src"]
+      "@projectlib/ui": ["../../packages/ui/src"],
+      "@projectlib/db": ["../../packages/db/src"]
     },
     "types": ["svelte"]
   },
