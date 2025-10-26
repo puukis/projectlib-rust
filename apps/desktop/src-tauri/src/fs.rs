@@ -52,7 +52,7 @@ impl FsWatcherManager {
 
         let mut watcher = notify::recommended_watcher({
             let event_times = event_times.clone();
-            move |res| {
+            move |res: Result<notify::Event, notify::Error>| {
                 match res {
                     Ok(event) => {
                         let kind = describe_event_kind(&event.kind);
@@ -111,7 +111,7 @@ impl FsWatcherManager {
         let key = canonical.to_string_lossy().to_string();
 
         app.fs_scope()
-            .deny_directory(&canonical)
+            .forbid_directory(&canonical, true)
             .map_err(|err| err.to_string())?;
 
         let mut watchers = self
