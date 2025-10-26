@@ -46,26 +46,35 @@
   }
 </script>
 
-<nav class="tabs" role="tablist">
+<div class="tabs" role="tablist" aria-label="Open editors">
   {#each tabs as tab}
-    <button
-      class:active={tab.path === activePath}
-      role="tab"
-      aria-selected={tab.path === activePath}
-      on:click={() => dispatch("select", { path: tab.path })}
-      on:auxclick={(event) => handleAuxClick(event, tab)}
-      on:contextmenu={(event) => openContextMenu(event, tab)}
-    >
-      <span class="name">{tab.name}</span>
-      {#if tab.dirty}
-        <span class="dirty" aria-label="unsaved changes">●</span>
-      {/if}
-      <span class="close" on:click|stopPropagation={() => dispatch("close", { path: tab.path })}
-        >×</span
+    <div class="tab-item">
+      <button
+        type="button"
+        class:active={tab.path === activePath}
+        role="tab"
+        aria-selected={tab.path === activePath}
+        on:click={() => dispatch("select", { path: tab.path })}
+        on:auxclick={(event) => handleAuxClick(event, tab)}
+        on:contextmenu={(event) => openContextMenu(event, tab)}
       >
-    </button>
+        <span class="name">{tab.name}</span>
+        {#if tab.dirty}
+          <span class="dirty" aria-label="unsaved changes">●</span>
+        {/if}
+      </button>
+      <button
+        type="button"
+        class="close"
+        class:active={tab.path === activePath}
+        aria-label={`Close ${tab.name}`}
+        on:click|stopPropagation={() => dispatch("close", { path: tab.path })}
+      >
+        ×
+      </button>
+    </div>
   {/each}
-</nav>
+</div>
 
 {#if contextTab}
   <div class="context-menu" style={`top:${contextY}px;left:${contextX}px`}>
@@ -113,6 +122,11 @@
     overflow-x: auto;
   }
 
+  .tab-item {
+    display: inline-flex;
+    align-items: stretch;
+  }
+
   button[role="tab"] {
     display: inline-flex;
     align-items: center;
@@ -127,6 +141,23 @@
   }
 
   button[role="tab"].active {
+    background: rgba(255, 255, 255, 0.1);
+    font-weight: 600;
+  }
+
+  .tab-item .close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.5rem;
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 0 0.5rem 0 0;
+  }
+
+  .tab-item .close.active {
     background: rgba(255, 255, 255, 0.1);
     font-weight: 600;
   }

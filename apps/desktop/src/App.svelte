@@ -1627,25 +1627,31 @@
           placeholder="Search files..."
           on:keydown={handleQuickOpenKey}
         />
-        <ul>
+        <ul role="listbox" aria-label="Matching files">
           {#if quickOpenMatches.length === 0}
             <li class="empty">No matches</li>
           {:else}
             {#each quickOpenMatches as file, index}
-              <li
-                class:selected={index === quickOpenIndex}
-                on:mouseenter={() => (quickOpenIndex = index)}
-                on:mousedown={(event) => {
-                  event.preventDefault();
-                  const match = quickOpenMatches[index];
-                  if (match) {
-                    void openDocument(match.path);
-                  }
-                  closeQuickOpen();
-                }}
-              >
-                <span class="name">{file.name}</span>
-                <span class="path">{file.path}</span>
+              <li>
+                <button
+                  type="button"
+                  class:selected={index === quickOpenIndex}
+                  on:mouseenter={() => (quickOpenIndex = index)}
+                  on:focus={() => (quickOpenIndex = index)}
+                  on:mousedown={(event) => event.preventDefault()}
+                  on:click={() => {
+                    const match = quickOpenMatches[index];
+                    if (match) {
+                      void openDocument(match.path);
+                    }
+                    closeQuickOpen();
+                  }}
+                  role="option"
+                  aria-selected={index === quickOpenIndex}
+                >
+                  <span class="name">{file.name}</span>
+                  <span class="path">{file.path}</span>
+                </button>
               </li>
             {/each}
           {/if}
@@ -1824,17 +1830,27 @@
   }
 
   .quick-open li {
+    margin: 0;
+  }
+
+  .quick-open li button {
+    width: 100%;
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
   }
 
-  .quick-open li.selected {
+  .quick-open li button.selected {
     background: rgba(59, 130, 246, 0.18);
   }
 
-  .quick-open li .path {
+  .quick-open li button .path {
     opacity: 0.6;
     font-size: 0.85rem;
   }
@@ -1842,6 +1858,7 @@
   .quick-open li.empty {
     text-align: center;
     opacity: 0.6;
+    padding: 0.5rem 0.75rem;
   }
 
   .shortcut-overlay {

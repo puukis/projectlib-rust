@@ -713,7 +713,6 @@
   .remote-actions button,
   .status button,
   .commit button,
-  .remote-log button,
   .remote-branches button {
     background: rgba(255, 255, 255, 0.1);
     border: none;
