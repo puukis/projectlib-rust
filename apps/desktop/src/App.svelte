@@ -25,6 +25,7 @@
   import CodeEditor from "./lib/editor/CodeEditor.svelte";
   import GitPanel from "./lib/editor/GitPanel.svelte";
   import { terminalService } from "./lib/terminal";
+  import { logOk, logErr } from "./lib/logging";
   import {
     MissingRunConfigurationError,
     RunAlreadyInProgressError,
@@ -344,7 +345,13 @@
     if (state.status === "running" || state.status === "starting") {
       const shouldStop = confirm(`Stop ${project.name}?`);
       if (shouldStop) {
-        await runService.stop(project.id);
+        try {
+          await runService.stop(project.id);
+          await logOk("ui:stop:clicked", { projectId: project.id });
+        } catch (err) {
+          await logErr("ui:stop:err", { projectId: project.id, msg: String(err) });
+          runControlError = err instanceof Error ? err.message : String(err);
+        }
       }
       return;
     }
@@ -354,8 +361,10 @@
 
     try {
       const tabId = await runService.start(project, overrides);
+      await logOk("ui:run:clicked", { projectId: project.id });
       await focusTerminal(tabId);
     } catch (err) {
+      await logErr("ui:run:err", { projectId: project.id, msg: String(err) });
       if (err instanceof MissingRunConfigurationError) {
         openRunModalForProject(project, "run", overrides);
       } else if (err instanceof RunAlreadyInProgressError) {
@@ -437,7 +446,13 @@
   }
 
   async function handleStopRun(project: Project) {
-    await runService.stop(project.id);
+    try {
+      await runService.stop(project.id);
+      await logOk("ui:stop:clicked", { projectId: project.id });
+    } catch (err) {
+      await logErr("ui:stop:err", { projectId: project.id, msg: String(err) });
+      runControlError = err instanceof Error ? err.message : String(err);
+    }
   }
 
   async function handleOpenFolder(project: Project) {
@@ -566,7 +581,9 @@
       documents = [...documents];
       schedulePersist();
       workspaceError = null;
+      await logOk("editor:save:ok", { path: doc.path, bytes: value.length });
     } catch (error) {
+      await logErr("editor:save:err", { path: doc.path, msg: String(error) });
       workspaceError =
         error instanceof Error ? error.message : `Failed to save ${doc.name}`;
     }

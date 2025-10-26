@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Terminal } from "@xterm/xterm";
 import { writable, type Readable } from "svelte/store";
 import { spawn, type IPty } from "tauri-pty";
+import { logOk, logErr, safeExec } from "../logging";
 
 import { resolveTerminalTheme } from "./theme";
 import type {
@@ -192,14 +193,49 @@ export class TerminalService {
             env: options.env,
           });
 
-    return this.createTabWithProcess({
+    const tab = await safeExec(
+      "run:start",
+      async () =>
+        this.createTabWithProcess({
+          projectId: options.projectId,
+          title: options.title,
+          cwd: options.cwd,
+          shell,
+          kind: "run",
+          spawn: async (terminal) => spawnFactory(terminal),
+        }),
+      { projectId: options.projectId, cmd: options.command, cwd: options.cwd },
+    );
+
+    await logOk("run:started", {
       projectId: options.projectId,
-      title: options.title,
+      cmd: options.command,
       cwd: options.cwd,
-      shell,
-      kind: "run",
-      spawn: spawnFactory,
     });
+
+    const exitDisposable = tab.pty.onExit(async ({ exitCode }) => {
+      if (exitCode === 0) {
+        await logOk("run:exit:ok", { projectId: options.projectId, code: 0 });
+      } else {
+        await logErr("run:exit:err", {
+          projectId: options.projectId,
+          code: typeof exitCode === "number" ? exitCode : -1,
+        });
+      }
+    });
+    tab.disposables.push(exitDisposable);
+
+    const errorDisposable = tab.pty.onError?.(async (error: unknown) => {
+      await logErr("run:pty:error", {
+        projectId: options.projectId,
+        msg: String(error),
+      });
+    });
+    if (errorDisposable) {
+      tab.disposables.push(errorDisposable);
+    }
+
+    return tab;
   }
 
   write(id: string, data: string): void {
