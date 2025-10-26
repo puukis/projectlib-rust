@@ -1,6 +1,7 @@
 use crate::git::models::{
-    GitBranchesResponse, GitError, GitFileChange, GitLogEntry, GitLogResponse, GitRemote,
-    GitRemoteList, GitRepositoryInfo, GitStashEntry, GitStashList, GitStatusResponse,
+    GitBranchesResponse, GitCommitDetails, GitCommitFileChange, GitError, GitFileChange,
+    GitGraphEntry, GitGraphResponse, GitLogEntry, GitLogResponse, GitRemote, GitRemoteList,
+    GitRepositoryInfo, GitStashEntry, GitStashList, GitStatusResponse,
 };
 use std::{
     collections::HashSet,
@@ -99,8 +100,13 @@ pub fn parse_status(output: &str) -> GitStatusResponse {
     let mut conflicts = Vec::new();
     let mut untracked = Vec::new();
 
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("## ") {
+    let mut entries = output.split('\0').peekable();
+    while let Some(entry) = entries.next() {
+        if entry.is_empty() {
+            continue;
+        }
+
+        if let Some(rest) = entry.strip_prefix("## ") {
             parse_branch_line(
                 rest,
                 &mut branch,
@@ -109,41 +115,64 @@ pub fn parse_status(output: &str) -> GitStatusResponse {
                 &mut behind,
                 &mut detached,
             );
-        } else if line.starts_with("??") {
-            if let Some(path) = line.get(3..) {
-                untracked.push(path.to_string());
-            }
-        } else if line.len() > 3 {
-            let status = &line[0..2];
-            if let Some(path_section) = line.get(3..) {
-                let (path, original) = parse_path(path_section);
-                let index_status = match status.chars().next() {
-                    Some(' ') | Some('?') => None,
-                    Some(c) => Some(c.to_string()),
-                    None => None,
-                };
-                let worktree_status = match status.chars().nth(1) {
-                    Some(' ') | Some('?') => None,
-                    Some(c) => Some(c.to_string()),
-                    None => None,
-                };
-                let change = GitFileChange {
-                    path: path.clone(),
-                    original_path: original.clone(),
-                    index_status: index_status.clone(),
-                    worktree_status: worktree_status.clone(),
-                };
+            continue;
+        }
 
-                if status.contains('U') {
-                    conflicts.push(change);
-                } else {
-                    if index_status.is_some() {
-                        staged.push(change.clone());
-                    }
-                    if worktree_status.is_some() {
-                        unstaged.push(change);
-                    }
+        if entry.starts_with("?? ") {
+            if let Some(path) = entry.get(3..) {
+                if !path.is_empty() {
+                    untracked.push(path.to_string());
                 }
+            }
+            continue;
+        }
+
+        if entry.len() <= 3 {
+            continue;
+        }
+
+        let status = &entry[0..2];
+        let mut path_section = entry[3..].to_string();
+        let mut original_path: Option<String> = None;
+
+        if status.starts_with('R') || status.starts_with('C') {
+            if let Some(next_path) = entries.next() {
+                original_path = Some(path_section.clone());
+                path_section = next_path.to_string();
+            }
+        }
+
+        let (path, parsed_original) = parse_path(&path_section);
+        if original_path.is_none() {
+            original_path = parsed_original;
+        }
+
+        let index_status = match status.chars().next() {
+            Some(' ') | Some('?') => None,
+            Some(c) => Some(c.to_string()),
+            None => None,
+        };
+        let worktree_status = match status.chars().nth(1) {
+            Some(' ') | Some('?') => None,
+            Some(c) => Some(c.to_string()),
+            None => None,
+        };
+
+        let change = GitFileChange {
+            path: path.clone(),
+            original_path: original_path.clone(),
+            index_status: index_status.clone(),
+            worktree_status: worktree_status.clone(),
+        };
+
+        if status.contains('U') {
+            conflicts.push(change);
+        } else {
+            if index_status.is_some() {
+                staged.push(change.clone());
+            }
+            if worktree_status.is_some() {
+                unstaged.push(change);
             }
         }
     }
@@ -320,4 +349,80 @@ pub fn parse_stash_list(output: &str) -> GitStashList {
         }
     }
     GitStashList { entries }
+}
+
+pub fn parse_graph(output: &str) -> GitGraphResponse {
+    let entries = output
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+
+            let mut parts = trimmed.splitn(5, '|');
+            let commit = parts.next()?.to_string();
+            let parents_part = parts.next().unwrap_or("");
+            let author = parts.next().unwrap_or("").to_string();
+            let date = parts.next().unwrap_or("").to_string();
+            let subject = parts.next().unwrap_or("").to_string();
+            let parents = if parents_part.trim().is_empty() {
+                Vec::new()
+            } else {
+                parents_part
+                    .split_whitespace()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+            };
+
+            Some(GitGraphEntry {
+                commit,
+                parents,
+                author,
+                date,
+                subject,
+            })
+        })
+        .collect();
+
+    GitGraphResponse { entries }
+}
+
+pub fn parse_commit_details(output: &str) -> GitCommitDetails {
+    let mut lines = output.lines();
+    let commit = lines.next().unwrap_or("").to_string();
+    let author = lines.next().unwrap_or("").to_string();
+    let date = lines.next().unwrap_or("").to_string();
+
+    let mut message_lines = Vec::new();
+    for line in lines.by_ref() {
+        if line.trim().is_empty() {
+            break;
+        }
+        message_lines.push(line.to_string());
+    }
+
+    let message = message_lines.join("\n").trim().to_string();
+    let mut files = Vec::new();
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let mut parts = trimmed.split_whitespace();
+        let status = parts.next().unwrap_or("").to_string();
+        let path = parts.collect::<Vec<&str>>().join(" ");
+        if status.is_empty() || path.is_empty() {
+            continue;
+        }
+        files.push(GitCommitFileChange { status, path });
+    }
+
+    GitCommitDetails {
+        commit,
+        author,
+        date,
+        message,
+        files,
+    }
 }

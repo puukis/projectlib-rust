@@ -12,15 +12,18 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@gitgraph/js": "^1.4.0",
+    "@projectlib/db": "workspace:*",
     "@projectlib/shared": "workspace:*",
     "@projectlib/ui": "workspace:*",
-    "@projectlib/db": "workspace:*",
     "@tauri-apps/api": "2.9.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
+    "monaco-editor": "^0.52.0",
     "svelte": "^5.41.4",
+    "svelte-virtual": "^1.0.0-next.22",
     "tauri-pty": "0.1.1",
     "zod": "^3.23.8"
   },

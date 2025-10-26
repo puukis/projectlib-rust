@@ -8,14 +8,22 @@
     listRuns,
     saveRunConfig,
     upsertProject,
+    loadEditorState,
+    saveEditorState,
     type Project,
-    type RunConfig
+    type RunConfig,
+    type EditorState,
+    type EditorFileState
   } from "@projectlib/db";
   import TerminalTabs from "./components/TerminalTabs.svelte";
   import ProjectCard from "./components/ProjectCard.svelte";
   import RunButton from "./components/RunButton.svelte";
   import RunConfigModal from "./components/RunConfigModal.svelte";
   import RunToast from "./components/RunToast.svelte";
+  import FileTree from "./lib/editor/FileTree.svelte";
+  import EditorTabs, { type EditorTab as WorkspaceEditorTab } from "./lib/editor/EditorTabs.svelte";
+  import CodeEditor from "./lib/editor/CodeEditor.svelte";
+  import GitPanel from "./lib/editor/GitPanel.svelte";
   import { terminalService } from "./lib/terminal";
   import {
     MissingRunConfigurationError,
@@ -26,6 +34,18 @@
   } from "./lib/run";
   import type { RunOverrides } from "./lib/run";
   import { open as openPath } from "@tauri-apps/plugin-shell";
+  import { fileTreeService, type TreeNode } from "./lib/editor/file-tree-service";
+  import { getOrCreateModel, disposeModel, setTheme, getMonaco } from "./lib/editor/monaco";
+  import type { editor } from "monaco-editor";
+  import {
+    createDir,
+    writeTextFile,
+    removeFile,
+    removeDir,
+    renameFile,
+    exists,
+  } from "@tauri-apps/api/fs";
+  import { join } from "@tauri-apps/api/path";
   import {
     PingSchema,
     type Ping,
@@ -92,6 +112,39 @@
   let runControlError: string | null = null;
   let runModal: RunModalState | null = null;
 
+  type EditorDocument = {
+    path: string;
+    name: string;
+    language: string;
+    model: editor.ITextModel;
+    dirty: boolean;
+    viewState: editor.IStandaloneCodeEditorViewState | null;
+    savedValue: string;
+  };
+
+  let fileTreeNodes: TreeNode[] = [];
+  let fileTreeError: string | null = null;
+  let fileTreeLoading = false;
+  let showFileTree = true;
+  let documents: EditorDocument[] = [];
+  let activeFilePath: string | null = null;
+  let activeDocument: EditorDocument | null = null;
+  let workspaceError: string | null = null;
+  let fsUnsubscribe: (() => void) | null = null;
+  let currentRootPath: string | null = null;
+  let quickOpenVisible = false;
+  let quickOpenQuery = "";
+  let quickOpenMatches: { path: string; name: string }[] = [];
+  let quickOpenIndex = 0;
+  let quickOpenInput: HTMLInputElement | null = null;
+  let showShortcutOverlay = false;
+  let awaitingShortcutCombo = false;
+  let awaitingTimeout: ReturnType<typeof setTimeout> | null = null;
+  let persistTimeout: ReturnType<typeof setTimeout> | null = null;
+  let gitPanelError: string | null = null;
+  let lastWorkspaceProjectId: string | null = null;
+  let flattenedFiles: { path: string; name: string }[] = [];
+
   const unsubscribeRunStates = runService.runStates.subscribe((value) => {
     runStateMap = value;
   });
@@ -100,6 +153,8 @@
   });
 
   onMount(async () => {
+    setTheme("vs-dark");
+    window.addEventListener("keydown", handleGlobalKeydown);
     try {
       const response = await invoke<string>("ping", { message: "Hello from Svelte" });
       ping = PingSchema.parse({ message: response });
@@ -115,6 +170,23 @@
   onDestroy(() => {
     unsubscribeRunStates();
     unsubscribeToasts();
+    window.removeEventListener("keydown", handleGlobalKeydown);
+    if (fsUnsubscribe) {
+      fsUnsubscribe();
+      fsUnsubscribe = null;
+    }
+    if (currentRootPath) {
+      void fileTreeService.unregisterRoot(currentRootPath);
+      currentRootPath = null;
+    }
+    if (awaitingTimeout) {
+      clearTimeout(awaitingTimeout);
+      awaitingTimeout = null;
+    }
+    if (persistTimeout) {
+      clearTimeout(persistTimeout);
+      persistTimeout = null;
+    }
   });
 
   async function loadProjects() {
@@ -143,6 +215,14 @@
     ? projects.find((project) => project.id === selectedProjectId) ?? null
     : null;
 
+  $: {
+    const currentId = selectedProject?.id ?? null;
+    if (currentId !== lastWorkspaceProjectId) {
+      lastWorkspaceProjectId = currentId;
+      void setupWorkspace(selectedProject ?? null);
+    }
+  }
+
   $: if (selectedProjectId && selectedProjectId !== lastRunsProjectId) {
     lastRunsProjectId = selectedProjectId;
     loadRunsForProject(selectedProjectId);
@@ -168,6 +248,22 @@
 
     return { run, draft };
   });
+
+  $: flattenedFiles = flattenFileTree(fileTreeNodes, []);
+
+  $: if (quickOpenVisible) {
+    quickOpenMatches = computeQuickOpenMatches();
+    if (quickOpenMatches.length === 0) {
+      quickOpenIndex = 0;
+    } else if (quickOpenIndex >= quickOpenMatches.length) {
+      quickOpenIndex = quickOpenMatches.length - 1;
+    }
+  } else {
+    quickOpenMatches = [];
+    quickOpenIndex = 0;
+  }
+
+  $: activeDocument = activeFilePath ? getDocument(activeFilePath) ?? null : null;
 
   function createDraftFromRun(run: RunConfig): RunDraft {
     return {
@@ -372,6 +468,464 @@
 
   function handleToastDismiss() {
     runService.dismissToast();
+  }
+
+  function schedulePersist() {
+    if (persistTimeout) {
+      clearTimeout(persistTimeout);
+    }
+    persistTimeout = setTimeout(() => {
+      persistTimeout = null;
+      void persistEditorStateSnapshot();
+    }, 300);
+  }
+
+  async function persistEditorStateSnapshot() {
+    const openFiles: EditorFileState[] = documents.map((doc) => ({
+      path: doc.path,
+      language: doc.language,
+    }));
+
+    const viewStateRecord: Record<string, unknown> = {};
+    for (const doc of documents) {
+      if (doc.viewState) {
+        viewStateRecord[doc.path] = doc.viewState;
+      }
+    }
+
+    const payload: EditorState = {
+      id: "global",
+      openFiles,
+      activeFile: activeFilePath,
+      viewState: viewStateRecord,
+      updatedAt: Date.now(),
+    };
+
+    try {
+      await saveEditorState(payload);
+    } catch (error) {
+      console.error("Failed to persist editor state", error);
+    }
+  }
+
+  function getDocument(path: string): EditorDocument | undefined {
+    return documents.find((doc) => doc.path === path);
+  }
+
+  async function openDocument(
+    path: string,
+    focus: boolean = true,
+    languageOverride?: string,
+    viewState?: editor.IStandaloneCodeEditorViewState | null,
+  ) {
+    let doc = getDocument(path);
+    if (!doc) {
+      try {
+        const { text, language } = await fileTreeService.openFile(path);
+        const name = path.split(/[/\\]/).pop() ?? path;
+        const resolvedLanguage = languageOverride ?? language;
+        const model = getOrCreateModel(path, text, resolvedLanguage);
+        doc = {
+          path,
+          name,
+          language: resolvedLanguage,
+          model,
+          dirty: false,
+          viewState: viewState ?? null,
+          savedValue: text,
+        };
+        documents = [...documents, doc];
+        workspaceError = null;
+      } catch (error) {
+        workspaceError =
+          error instanceof Error ? error.message : `Failed to open ${path}`;
+        return;
+      }
+    } else if (languageOverride && languageOverride !== doc.language) {
+      const monaco = getMonaco();
+      monaco.editor.setModelLanguage(doc.model, languageOverride);
+      doc.language = languageOverride;
+      documents = [...documents];
+    }
+
+    if (viewState) {
+      doc.viewState = viewState;
+      documents = [...documents];
+    }
+
+    if (focus) {
+      activeFilePath = path;
+    }
+
+    schedulePersist();
+  }
+
+  async function saveDocument(path: string) {
+    const doc = getDocument(path);
+    if (!doc) {
+      return;
+    }
+    try {
+      const value = doc.model.getValue();
+      await fileTreeService.saveFile(doc.path, value);
+      doc.savedValue = value;
+      doc.dirty = false;
+      documents = [...documents];
+      schedulePersist();
+      workspaceError = null;
+    } catch (error) {
+      workspaceError =
+        error instanceof Error ? error.message : `Failed to save ${doc.name}`;
+    }
+  }
+
+  function closeDocument(path: string, force = false) {
+    const doc = getDocument(path);
+    if (!doc) {
+      return;
+    }
+    if (!force && doc.dirty) {
+      const shouldClose = confirm(`Discard unsaved changes in ${doc.name}?`);
+      if (!shouldClose) {
+        return;
+      }
+    }
+    disposeModel(path);
+    documents = documents.filter((item) => item.path !== path);
+    if (activeFilePath === path) {
+      activeFilePath = documents[0]?.path ?? null;
+    }
+    schedulePersist();
+  }
+
+  async function loadFileTree(rootPath: string) {
+    fileTreeLoading = true;
+    try {
+      fileTreeNodes = await fileTreeService.scanProject(rootPath);
+      fileTreeError = null;
+    } catch (error) {
+      fileTreeError = error instanceof Error ? error.message : String(error);
+    } finally {
+      fileTreeLoading = false;
+    }
+  }
+
+  async function handleFsChange(event: { path: string }) {
+    if (!currentRootPath) {
+      return;
+    }
+    if (!event.path.startsWith(currentRootPath)) {
+      return;
+    }
+    await loadFileTree(currentRootPath);
+    const doc = getDocument(event.path);
+    if (doc && !doc.dirty) {
+      try {
+        const { text } = await fileTreeService.openFile(doc.path);
+        doc.savedValue = text;
+        doc.model.setValue(text);
+        doc.dirty = false;
+        documents = [...documents];
+      } catch (error) {
+        console.error("Failed to refresh file", error);
+      }
+    }
+  }
+
+  function flattenFileTree(nodes: TreeNode[], acc: { path: string; name: string }[] = []) {
+    for (const node of nodes) {
+      if (node.type === "file") {
+        acc.push({ path: node.path, name: node.name });
+      }
+      if (node.children) {
+        flattenFileTree(node.children, acc);
+      }
+    }
+    return acc;
+  }
+
+  function computeQuickOpenMatches() {
+    const query = quickOpenQuery.trim().toLowerCase();
+    if (!query) {
+      return flattenedFiles.slice(0, 50);
+    }
+    return flattenedFiles
+      .filter(
+        (item) =>
+          item.name.toLowerCase().includes(query) ||
+          item.path.toLowerCase().includes(query),
+      )
+      .slice(0, 50);
+  }
+
+  async function openQuickOpen() {
+    quickOpenVisible = true;
+    quickOpenQuery = "";
+    quickOpenIndex = 0;
+    await tick();
+    quickOpenInput?.focus();
+  }
+
+  function closeQuickOpen() {
+    quickOpenVisible = false;
+    quickOpenQuery = "";
+    quickOpenIndex = 0;
+  }
+
+  function handleQuickOpenKey(event: KeyboardEvent) {
+    if (!quickOpenVisible) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      quickOpenIndex = Math.min(quickOpenIndex + 1, quickOpenMatches.length - 1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      quickOpenIndex = Math.max(quickOpenIndex - 1, 0);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const match = quickOpenMatches[quickOpenIndex];
+      if (match) {
+        void openDocument(match.path);
+      }
+      closeQuickOpen();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeQuickOpen();
+    }
+  }
+
+  async function setupWorkspace(project: Project | null) {
+    if (persistTimeout) {
+      clearTimeout(persistTimeout);
+      persistTimeout = null;
+    }
+    if (fsUnsubscribe) {
+      fsUnsubscribe();
+      fsUnsubscribe = null;
+    }
+    if (currentRootPath && (!project || project.path !== currentRootPath)) {
+      await fileTreeService.unregisterRoot(currentRootPath);
+    }
+
+    documents.forEach((doc) => disposeModel(doc.path));
+    documents = [];
+    activeFilePath = null;
+    fileTreeNodes = [];
+    flattenedFiles = [];
+
+    if (!project) {
+      currentRootPath = null;
+      return;
+    }
+
+    currentRootPath = project.path;
+    try {
+      await fileTreeService.registerRoot(project.path);
+      fsUnsubscribe = fileTreeService.subscribe(handleFsChange);
+      await loadFileTree(project.path);
+      await restoreEditorStateForProject(project.path);
+      workspaceError = null;
+    } catch (error) {
+      workspaceError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function restoreEditorStateForProject(rootPath: string) {
+    try {
+      const persisted = await loadEditorState();
+      if (!persisted) {
+        return;
+      }
+      for (const file of persisted.openFiles) {
+        if (file.path.startsWith(rootPath)) {
+          const view =
+            typeof persisted.viewState[file.path] === "object"
+              ? (persisted.viewState[file.path] as editor.IStandaloneCodeEditorViewState)
+              : null;
+          await openDocument(file.path, false, file.language ?? undefined, view);
+        }
+      }
+      if (persisted.activeFile && getDocument(persisted.activeFile)) {
+        activeFilePath = persisted.activeFile;
+      } else if (documents.length > 0) {
+        activeFilePath = documents[0].path;
+      }
+    } catch (error) {
+      console.error("Failed to restore editor state", error);
+    }
+  }
+
+  async function handleCreateFile(directory: string) {
+    const name = prompt("New file name");
+    if (!name) {
+      return;
+    }
+    const filePath = await join(directory, name);
+    const existsAlready = await exists(filePath);
+    if (existsAlready) {
+      alert("A file with that name already exists.");
+      return;
+    }
+    await writeTextFile(filePath, "");
+    await loadFileTree(currentRootPath ?? directory);
+    await openDocument(filePath);
+  }
+
+  async function handleCreateFolder(directory: string) {
+    const name = prompt("New folder name");
+    if (!name) {
+      return;
+    }
+    const folderPath = await join(directory, name);
+    const existsAlready = await exists(folderPath);
+    if (existsAlready) {
+      alert("A folder with that name already exists.");
+      return;
+    }
+    await createDir(folderPath, { recursive: true });
+    await loadFileTree(currentRootPath ?? directory);
+  }
+
+  async function handleRename(path: string) {
+    const segments = path.split(/[/\\]/);
+    const currentName = segments.pop() ?? path;
+    const parent = segments.join("/");
+    const nextName = prompt("Rename to", currentName);
+    if (!nextName || nextName === currentName) {
+      return;
+    }
+    const nextPath = await join(parent, nextName);
+    await renameFile(path, nextPath);
+    await loadFileTree(currentRootPath ?? parent);
+    const doc = getDocument(path);
+    if (doc) {
+      disposeModel(path);
+      documents = documents.filter((item) => item.path !== path);
+      await openDocument(nextPath, activeFilePath === path);
+    }
+  }
+
+  async function handleDelete(path: string) {
+    const confirmed = confirm(`Delete ${path}?`);
+    if (!confirmed) {
+      return;
+    }
+    const doc = getDocument(path);
+    if (doc) {
+      closeDocument(path, true);
+    }
+    try {
+      await removeFile(path);
+    } catch {
+      await removeDir(path, { recursive: true });
+    }
+    await loadFileTree(currentRootPath ?? path);
+  }
+
+  async function handleReveal(path: string) {
+    try {
+      await openPath(path);
+    } catch (error) {
+      workspaceError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function handleTerminal(directory: string) {
+    if (!selectedProject) {
+      return;
+    }
+    try {
+      const tab = await terminalService.createTab(selectedProject.id);
+      tab.terminal.write(`cd "${directory}"\r`);
+    } catch (error) {
+      workspaceError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  function closeOtherDocuments(path: string) {
+    const others = documents.filter((doc) => doc.path !== path);
+    if (others.length === 0) {
+      return;
+    }
+    const dirtyOthers = others.filter((doc) => doc.dirty);
+    if (dirtyOthers.length > 0) {
+      const shouldClose = confirm(
+        `Discard unsaved changes in ${dirtyOthers.length} file${dirtyOthers.length === 1 ? "" : "s"}?`,
+      );
+      if (!shouldClose) {
+        return;
+      }
+    }
+    for (const doc of others) {
+      closeDocument(doc.path, true);
+    }
+    activeFilePath = path;
+    schedulePersist();
+  }
+
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    if (quickOpenVisible) {
+      handleQuickOpenKey(event);
+      if (event.defaultPrevented) {
+        return;
+      }
+    }
+
+    const isModifier = event.metaKey || event.ctrlKey;
+
+    if (awaitingShortcutCombo && isModifier && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      awaitingShortcutCombo = false;
+      if (awaitingTimeout) {
+        clearTimeout(awaitingTimeout);
+        awaitingTimeout = null;
+      }
+      showShortcutOverlay = true;
+      return;
+    }
+
+    if (isModifier && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      if (activeFilePath) {
+        void saveDocument(activeFilePath);
+      }
+      return;
+    }
+
+    if (isModifier && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      awaitingShortcutCombo = true;
+      if (awaitingTimeout) {
+        clearTimeout(awaitingTimeout);
+      }
+      awaitingTimeout = setTimeout(() => {
+        awaitingShortcutCombo = false;
+      }, 800);
+      return;
+    }
+
+    if (isModifier && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      void openQuickOpen();
+      return;
+    }
+
+    if (isModifier && event.key.toLowerCase() === "b") {
+      event.preventDefault();
+      showFileTree = !showFileTree;
+      return;
+    }
+
+    if (event.key === "Escape") {
+      if (quickOpenVisible) {
+        event.preventDefault();
+        closeQuickOpen();
+      } else if (showShortcutOverlay) {
+        event.preventDefault();
+        showShortcutOverlay = false;
+      }
+    }
   }
 
   function updateDraftField(id: string, field: keyof RunDraft, value: string) {
@@ -745,6 +1299,99 @@
       <p>{ping.message}</p>
     {/if}
 
+    {#if workspaceError}
+      <div class="workspace-banner error" role="alert">{workspaceError}</div>
+    {/if}
+    {#if gitPanelError}
+      <div class="workspace-banner error" role="alert">{gitPanelError}</div>
+    {/if}
+
+    <section class="workspace">
+      <aside class:collapsed={!showFileTree}>
+        <div class="project-selector">
+          <label>
+            Project
+            <select bind:value={selectedProjectId}>
+              {#each projects as project}
+                <option value={project.id}>{project.name}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+        {#if fileTreeLoading}
+          <p class="empty">Loading files…</p>
+        {:else if fileTreeError}
+          <p class="error">{fileTreeError}</p>
+        {:else if selectedProject}
+          <FileTree
+            rootPath={selectedProject.path}
+            nodes={fileTreeNodes}
+            selectedPath={activeFilePath}
+            on:open={(event) => openDocument(event.detail.path)}
+            on:refresh={() => selectedProject && loadFileTree(selectedProject.path)}
+            on:createFile={(event) => handleCreateFile(event.detail.directory)}
+            on:createFolder={(event) => handleCreateFolder(event.detail.directory)}
+            on:rename={(event) => handleRename(event.detail.path)}
+            on:delete={(event) => handleDelete(event.detail.path)}
+            on:reveal={(event) => handleReveal(event.detail.path)}
+            on:terminal={(event) => handleTerminal(event.detail.directory)}
+          />
+        {:else}
+          <p class="empty">Select a project to browse files.</p>
+        {/if}
+      </aside>
+
+      <section class="editor-section">
+        <EditorTabs
+          tabs={documents.map((doc) => ({ path: doc.path, name: doc.name, language: doc.language, dirty: doc.dirty })) as WorkspaceEditorTab[]}
+          activePath={activeFilePath}
+          on:select={(event) => {
+            activeFilePath = event.detail.path;
+            schedulePersist();
+          }}
+          on:close={(event) => closeDocument(event.detail.path)}
+          on:closeOthers={(event) => closeOtherDocuments(event.detail.path)}
+          on:reveal={(event) => handleReveal(event.detail.path)}
+        />
+        <div class="editor-container">
+          {#if activeDocument}
+            <CodeEditor
+              path={activeDocument.path}
+              model={activeDocument.model}
+              viewState={activeDocument.viewState}
+              on:change={(event) => {
+                const doc = getDocument(event.detail.path);
+                if (doc) {
+                  doc.dirty = event.detail.value !== doc.savedValue;
+                  documents = [...documents];
+                }
+              }}
+              on:save={(event) => {
+                void saveDocument(event.detail.path);
+              }}
+              on:cursor={(event) => {
+                const doc = getDocument(event.detail.path);
+                if (doc) {
+                  doc.viewState = event.detail.viewState;
+                  schedulePersist();
+                }
+              }}
+            />
+          {:else}
+            <div class="empty-editor">Open a file to start editing.</div>
+          {/if}
+        </div>
+      </section>
+
+      <aside class="git-section">
+        <GitPanel
+          repositoryPath={selectedProject?.path ?? null}
+          projectName={selectedProject?.name ?? null}
+          on:error={(event) => (gitPanelError = event.detail.message)}
+        />
+      </aside>
+    </section>
+
     <section class="panel">
       <h2>Git runtime</h2>
       {#if gitInfo}
@@ -978,6 +1625,55 @@
         {/if}
       {/if}
     </section>
+
+    {#if quickOpenVisible}
+      <div class="quick-open" role="dialog" aria-modal="true">
+        <input
+          bind:this={quickOpenInput}
+          bind:value={quickOpenQuery}
+          placeholder="Search files..."
+          on:keydown={handleQuickOpenKey}
+        />
+        <ul>
+          {#if quickOpenMatches.length === 0}
+            <li class="empty">No matches</li>
+          {:else}
+            {#each quickOpenMatches as file, index}
+              <li
+                class:selected={index === quickOpenIndex}
+                on:mouseenter={() => (quickOpenIndex = index)}
+                on:mousedown={(event) => {
+                  event.preventDefault();
+                  const match = quickOpenMatches[index];
+                  if (match) {
+                    void openDocument(match.path);
+                  }
+                  closeQuickOpen();
+                }}
+              >
+                <span class="name">{file.name}</span>
+                <span class="path">{file.path}</span>
+              </li>
+            {/each}
+          {/if}
+        </ul>
+      </div>
+    {/if}
+
+    {#if showShortcutOverlay}
+      <div class="shortcut-overlay" role="dialog" aria-modal="true">
+        <div class="overlay-card">
+          <h3>Keyboard Shortcuts</h3>
+          <ul>
+            <li><span>Ctrl/Cmd + P</span><span>Quick open</span></li>
+            <li><span>Ctrl/Cmd + B</span><span>Toggle file tree</span></li>
+            <li><span>Ctrl/Cmd + K, Ctrl/Cmd + S</span><span>Shortcut overview</span></li>
+            <li><span>Ctrl/Cmd + S</span><span>Save current file</span></li>
+          </ul>
+          <button type="button" on:click={() => (showShortcutOverlay = false)}>Close</button>
+        </div>
+      </div>
+    {/if}
   </Shell>
 </main>
 
@@ -1010,6 +1706,184 @@
     border-radius: 0.75rem;
     background: color-mix(in srgb, var(--terminal-bg) 35%, transparent);
     backdrop-filter: blur(6px);
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: 280px 1fr 320px;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .workspace aside {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--terminal-bg) 45%, transparent);
+    padding: 0.75rem;
+  }
+
+  .workspace aside.collapsed {
+    display: none;
+  }
+
+  .project-selector label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .project-selector select {
+    padding: 0.45rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    background: color-mix(in srgb, var(--terminal-bg) 75%, transparent);
+    color: inherit;
+  }
+
+  .editor-section {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--terminal-bg) 45%, transparent);
+    padding: 0.75rem;
+    gap: 0.75rem;
+    min-height: 520px;
+  }
+
+  .editor-container {
+    flex: 1;
+    min-height: 420px;
+    border-radius: 0.65rem;
+    overflow: hidden;
+  }
+
+  .editor-container :global(.editor) {
+    height: 100%;
+  }
+
+  .empty-editor {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    border: 2px dashed color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 0.65rem;
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .git-section {
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--terminal-bg) 45%, transparent);
+    padding: 0.75rem;
+    max-height: 100%;
+    overflow: auto;
+  }
+
+  .workspace-banner {
+    margin: 0.5rem 0;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.6rem;
+    background: rgba(220, 38, 38, 0.18);
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    color: #fecaca;
+  }
+
+  .workspace-banner.error {
+    color: #fecaca;
+  }
+
+  .quick-open {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 12vh;
+    z-index: 3000;
+  }
+
+  .quick-open input {
+    width: min(32rem, 90vw);
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.75rem 0.75rem 0 0;
+    border: none;
+    outline: none;
+    background: rgba(17, 24, 39, 0.95);
+    color: inherit;
+    font-size: 1rem;
+  }
+
+  .quick-open ul {
+    width: min(32rem, 90vw);
+    max-height: 18rem;
+    overflow: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: rgba(17, 24, 39, 0.92);
+    border-radius: 0 0 0.75rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .quick-open li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .quick-open li.selected {
+    background: rgba(59, 130, 246, 0.18);
+  }
+
+  .quick-open li .path {
+    opacity: 0.6;
+    font-size: 0.85rem;
+  }
+
+  .quick-open li.empty {
+    text-align: center;
+    opacity: 0.6;
+  }
+
+  .shortcut-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: grid;
+    place-items: center;
+    z-index: 3001;
+  }
+
+  .shortcut-overlay .overlay-card {
+    background: rgba(15, 23, 42, 0.92);
+    border-radius: 0.9rem;
+    padding: 1.5rem;
+    width: min(32rem, 90vw);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .shortcut-overlay ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .shortcut-overlay li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
   }
 
   dl {
