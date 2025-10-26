@@ -202,7 +202,7 @@ pub async fn git_commit_details(
     service: State<'_, GitService>,
     request: GitCommitDetailsRequest,
 ) -> Result<GitCommitDetails, GitErrorResponse> {
-    let mut args = vec![
+    let args = vec![
         "show".into(),
         "--name-status".into(),
         "--date=iso-strict".into(),

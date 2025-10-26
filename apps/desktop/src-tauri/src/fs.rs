@@ -6,7 +6,8 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_fs::FsExt;
 
 #[derive(Default)]
 pub struct FsWatcherManager {
