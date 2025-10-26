@@ -15,6 +15,7 @@ desktop = [
     "dep:tauri-plugin-sql",
     "dep:tauri-plugin-shell",
     "dep:tauri-plugin-pty",
+    "dep:tauri-plugin-fs",
 ]
 
 [dependencies]
@@ -22,6 +23,7 @@ tauri = { version = "2.9.1", features = ["wry"], optional = true }
 tauri-plugin-sql = { version = "2", features = ["sqlite"], optional = true }
 tauri-plugin-shell = { version = "2.3.1", optional = true }
 tauri-plugin-pty = { version = "0.1.1", optional = true }
+tauri-plugin-fs = { version = "2.4.2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "6.1"

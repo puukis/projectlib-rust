@@ -10,7 +10,7 @@ mod runs;
 pub mod terminal;
 
 #[cfg(feature = "desktop")]
-use std::{error::Error, fs, io};
+use std::{error::Error, fs as std_fs, io};
 
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, State};
@@ -41,7 +41,7 @@ fn resolve_database_url(config: State<DatabaseConfig>) -> String {
 #[cfg(feature = "desktop")]
 fn prepare_database(app: &AppHandle) -> Result<String, Box<dyn Error>> {
     let data_dir = app.path().app_data_dir()?;
-    fs::create_dir_all(&data_dir)?;
+    std_fs::create_dir_all(&data_dir)?;
 
     let db_path = data_dir.join(DATABASE_FILE);
     let path_str = db_path.into_os_string().into_string().map_err(|_| {
@@ -82,6 +82,7 @@ pub fn run() {
 
             Ok(())
         })
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_pty::init())
         .invoke_handler(tauri::generate_handler![
