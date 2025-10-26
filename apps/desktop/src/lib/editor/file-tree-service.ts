@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { readDir, readTextFile, writeTextFile, type DirEntry } from "@tauri-apps/plugin-fs";
+import { readDir, type DirEntry } from "@tauri-apps/plugin-fs";
+import { readFileSafe, writeFileSafe } from "../file-ops";
+import { safeExec } from "../logging";
 import { detectLanguage } from "./language";
 
 export type TreeNode = {
@@ -62,23 +64,29 @@ export class FileTreeService {
   }
 
   async scanProject(root: string): Promise<TreeNode[]> {
-    const entries = await readDir(root, { recursive: false });
-    const children = await Promise.all(
-      entries
-        .filter((entry) => this.shouldInclude(entry))
-        .map(async (entry) => this.entryToNode(entry)),
+    return safeExec(
+      "project:scan",
+      async () => {
+        const entries = await readDir(root, { recursive: false });
+        const children = await Promise.all(
+          entries
+            .filter((entry) => this.shouldInclude(entry))
+            .map(async (entry) => this.entryToNode(entry)),
+        );
+        return this.sortNodes(children);
+      },
+      { root },
     );
-    return this.sortNodes(children);
   }
 
   async openFile(path: string): Promise<FileOpenResult> {
-    const text = await readTextFile(path);
+    const { text } = await readFileSafe(path);
     const language = detectLanguage(path);
     return { text, language };
   }
 
   async saveFile(path: string, text: string): Promise<void> {
-    await writeTextFile(path, text);
+    await writeFileSafe(path, text);
   }
 
   private async entryToNode(entry: DirEntry): Promise<TreeNode> {

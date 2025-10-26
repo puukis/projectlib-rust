@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 #[cfg(feature = "desktop")]
+mod error;
+#[cfg(feature = "desktop")]
 mod fs;
 #[cfg(feature = "desktop")]
 mod git;
@@ -10,10 +12,16 @@ mod runs;
 pub mod terminal;
 
 #[cfg(feature = "desktop")]
-use std::{error::Error, fs as std_fs, io};
+use std::{fs as std_fs, io, panic};
 
 #[cfg(feature = "desktop")]
+use error::AppError;
+#[cfg(feature = "desktop")]
+use log::{error, info};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, State};
+#[cfg(feature = "desktop")]
+use tauri_plugin_log::{Builder as LogBuilder, LogTarget};
 
 #[cfg(feature = "desktop")]
 const DATABASE_FILE: &str = "projectlib.db";
@@ -39,8 +47,11 @@ fn resolve_database_url(config: State<DatabaseConfig>) -> String {
 }
 
 #[cfg(feature = "desktop")]
-fn prepare_database(app: &AppHandle) -> Result<String, Box<dyn Error>> {
-    let data_dir = app.path().app_data_dir()?;
+fn prepare_database(app: &AppHandle) -> Result<String, AppError> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| AppError::Other(err.to_string()))?;
     std_fs::create_dir_all(&data_dir)?;
 
     let db_path = data_dir.join(DATABASE_FILE);
@@ -56,11 +67,26 @@ fn prepare_database(app: &AppHandle) -> Result<String, Box<dyn Error>> {
 
 #[cfg(feature = "desktop")]
 pub fn run() {
+    panic::set_hook(Box::new(|p| {
+        eprintln!("panic: {p}");
+    }));
+
     let context = tauri::generate_context!();
+
     tauri::Builder::default()
+        .plugin(
+            LogBuilder::new()
+                .targets([LogTarget::Stdout, LogTarget::LogDir])
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .setup(|app| {
             let app_handle = app.handle();
-            let db_url = prepare_database(&app_handle)?;
+            let db_url = prepare_database(&app_handle).map_err(|err| {
+                error!("db:init:err {err}");
+                Box::<dyn std::error::Error>::from(err)
+            })?;
+            info!("db:init:ok path={}", db_url);
 
             app.manage(DatabaseConfig {
                 url: db_url.clone(),
@@ -74,11 +100,19 @@ pub fn run() {
                 .map(Into::into)
                 .collect();
 
-            app_handle.plugin(
-                tauri_plugin_sql::Builder::new()
-                    .add_migrations(&db_url, migrations)
-                    .build(),
-            )?;
+            app_handle
+                .plugin(
+                    tauri_plugin_sql::Builder::new()
+                        .add_migrations(&db_url, migrations)
+                        .build(),
+                )
+                .map_err(|err| {
+                    error!("db:migrate:err {err}");
+                    err
+                })?;
+            info!("db:migrate:ok");
+
+            info!("app:booted");
 
             Ok(())
         })
@@ -109,6 +143,7 @@ pub fn run() {
             git::operations::git_fetch_all,
             git::operations::git_pull,
             git::operations::git_push,
+            git::operations::git_run,
             fs::register_project_root,
             fs::unregister_project_root,
             runs::detect_project_runs,

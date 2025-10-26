@@ -11,6 +11,7 @@ use crate::git::{
     streaming::run_streaming_command,
     util,
 };
+use log::{error, info};
 use tauri::{AppHandle, State};
 use tauri_plugin_shell::ShellExt;
 
@@ -22,6 +23,7 @@ async fn run_git_capture(
     auth: Option<GitAuth>,
 ) -> Result<GitCommandOutcome, GitError> {
     let config = service.prepare(Some(repository_path))?;
+    let display_args = args.clone();
     let mut command = app
         .shell()
         .command(&config.executable.program)
@@ -49,6 +51,14 @@ async fn run_git_capture(
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    let command_display = display_args.join(" ");
+    if output.status.success() {
+        info!("git:ok {}", command_display);
+    } else {
+        let code = output.status.code().unwrap_or(-1);
+        error!("git:exit code={} {}", code, command_display);
+    }
 
     Ok(GitCommandOutcome {
         exit_code: output.status.code(),
@@ -470,4 +480,44 @@ pub async fn git_push(
     request: GitStreamRequest,
 ) -> Result<crate::git::models::GitCommandHandle, GitErrorResponse> {
     run_streaming_command(app, service, request, vec!["push".into()]).await
+}
+
+#[tauri::command]
+pub async fn git_run(
+    app: AppHandle,
+    service: State<'_, GitService>,
+    cwd: String,
+    args: Vec<String>,
+) -> Result<(i32, String, String), String> {
+    let joined = args.join(" ");
+    let config = service.prepare(Some(&cwd)).map_err(|err| {
+        let message = format!("git:err run {} @ {} -> {}", joined, cwd, err);
+        error!("{message}");
+        message
+    })?;
+
+    let mut command = app
+        .shell()
+        .command(&config.executable.program)
+        .args(config.executable.prefix_args.clone())
+        .args(args.clone())
+        .current_dir(config.working_dir.clone());
+
+    let output = command.output().await.map_err(|err| {
+        let message = format!("git:err run {} @ {} -> {}", joined, cwd, err);
+        error!("{message}");
+        message
+    })?;
+
+    let code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    if code == 0 {
+        info!("git:ok {}", joined);
+    } else {
+        error!("git:exit code={} {}", code, joined);
+    }
+
+    Ok((code, stdout, stderr))
 }
