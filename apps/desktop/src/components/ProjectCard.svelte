@@ -67,6 +67,8 @@
 
 <article
   class:selected
+  role="button"
+  aria-pressed={selected}
   tabindex="0"
   on:click={() => dispatch("select")}
   on:keydown={handleKeydown}
@@ -77,8 +79,12 @@
       <h3>{project.name}</h3>
       <p class="path" title={project.path}>{project.path}</p>
     </div>
-    <div class="run-control" on:click|stopPropagation={handleRun}>
-      <RunButton projectName={project.name} status={state.status} />
+    <div class="run-control">
+      <RunButton
+        projectName={project.name}
+        status={state.status}
+        on:click|stopPropagation={handleRun}
+      />
     </div>
   </header>
   <footer>

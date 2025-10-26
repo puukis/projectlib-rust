@@ -43,6 +43,7 @@
   bind:this={menuElement}
   style={`top:${position.y}px;left:${position.x}px;`}
   role="menu"
+  aria-label={`Run actions for ${projectName}`}
   on:keydown={handleKeydown}
 >
   <li role="menuitem">
