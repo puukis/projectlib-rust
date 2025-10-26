@@ -2,6 +2,17 @@ import { info, warn, error, debug, attachConsole } from '@tauri-apps/plugin-log'
 
 type KeyValues = Record<string, unknown>;
 
+type TauriWindow = Window & {
+  __TAURI_INTERNALS__?: {
+    transformCallback?: unknown;
+  };
+};
+
+function canAttachConsole() {
+  const tauriWindow = window as TauriWindow;
+  return typeof tauriWindow.__TAURI_INTERNALS__?.transformCallback === 'function';
+}
+
 function serializeKeyValues(values: KeyValues): Record<string, string> {
   return Object.fromEntries(
     Object.entries(values)
@@ -22,7 +33,7 @@ function serializeKeyValues(values: KeyValues): Record<string, string> {
 }
 
 export async function setupLogging() {
-  if (import.meta.env.DEV) await attachConsole();
+  if (import.meta.env.DEV && canAttachConsole()) await attachConsole();
   window.addEventListener('error', (e) => {
     if (e?.error) {
       error('ui:window:error', {
