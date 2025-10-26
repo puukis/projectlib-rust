@@ -145,7 +145,7 @@ export class FileTreeService {
   }
 
   private ensureListener() {
-    if (this.fsListener) {
+    if (this.fsListener || !this.canListenForFsChanges()) {
       return;
     }
     this.fsListener = listen<FsChangeEvent>("fs:changed", (event) => {
@@ -153,6 +153,18 @@ export class FileTreeService {
         handler(event.payload);
       }
     });
+  }
+
+  private canListenForFsChanges(): boolean {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const tauriWindow = window as typeof window & {
+      __TAURI_INTERNALS__?: { transformCallback?: unknown };
+    };
+
+    return typeof tauriWindow.__TAURI_INTERNALS__?.transformCallback === "function";
   }
 }
 
