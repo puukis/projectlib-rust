@@ -876,7 +876,7 @@
             <RunButton
               projectName={selectedProject.name}
               status={getRunState(selectedProject.id).status}
-              on:click|stopPropagation={() => handleProjectRun(selectedProject)}
+              on:click={() => handleProjectRun(selectedProject)}
             />
           </div>
         {/if}
