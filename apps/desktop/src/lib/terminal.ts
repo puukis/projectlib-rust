@@ -1,9 +1,9 @@
-import { createPty } from 'tauri-pty';
+import { spawn, type IPty } from 'tauri-pty';
 import { logOk, logErr, safeExec } from './logging';
 
-export async function startRun(projectId: string, cmd: string, args: string[], cwd: string) {
+export async function startRun(projectId: string, cmd: string, args: string[], cwd: string): Promise<IPty> {
   return safeExec('run:start', async () => {
-    const pty = await createPty({ cmd, args, cwd, cols: 80, rows: 24 });
+    const pty = spawn(cmd, args, { cwd, cols: 80, rows: 24 });
     await logOk('run:started', { projectId, cmd, cwd });
     pty.onExit(async ({ exitCode }) =>
       (exitCode === 0)
