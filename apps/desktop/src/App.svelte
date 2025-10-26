@@ -37,14 +37,7 @@
   import { fileTreeService, type TreeNode } from "./lib/editor/file-tree-service";
   import { getOrCreateModel, disposeModel, setTheme, getMonaco } from "./lib/editor/monaco";
   import type { editor } from "monaco-editor";
-  import {
-    createDir,
-    writeTextFile,
-    removeFile,
-    removeDir,
-    renameFile,
-    exists,
-  } from "@tauri-apps/api/fs";
+  import { mkdir, writeTextFile, remove, rename, exists } from "@tauri-apps/plugin-fs";
   import { join } from "@tauri-apps/api/path";
   import {
     PingSchema,
@@ -783,7 +776,7 @@
       alert("A folder with that name already exists.");
       return;
     }
-    await createDir(folderPath, { recursive: true });
+    await mkdir(folderPath, { recursive: true });
     await loadFileTree(currentRootPath ?? directory);
   }
 
@@ -796,7 +789,7 @@
       return;
     }
     const nextPath = await join(parent, nextName);
-    await renameFile(path, nextPath);
+    await rename(path, nextPath);
     await loadFileTree(currentRootPath ?? parent);
     const doc = getDocument(path);
     if (doc) {
@@ -816,9 +809,9 @@
       closeDocument(path, true);
     }
     try {
-      await removeFile(path);
+      await remove(path);
     } catch {
-      await removeDir(path, { recursive: true });
+      await remove(path, { recursive: true });
     }
     await loadFileTree(currentRootPath ?? path);
   }

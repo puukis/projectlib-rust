@@ -17,6 +17,7 @@
     "@projectlib/shared": "workspace:*",
     "@projectlib/ui": "workspace:*",
     "@tauri-apps/api": "2.9.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
     "@xterm/addon-fit": "^0.10.0",
