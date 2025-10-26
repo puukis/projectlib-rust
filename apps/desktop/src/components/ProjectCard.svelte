@@ -66,11 +66,13 @@
   })();
 </script>
 
-<article
+<div
+  class="card"
   class:selected
   role="button"
   aria-pressed={selected}
   tabindex="0"
+  aria-label={`Project ${project.name}`}
   on:click={() => dispatch("select")}
   on:keydown={handleKeydown}
   on:contextmenu={openMenu}
@@ -127,10 +129,10 @@
       on:close={closeMenu}
     />
   {/if}
-</article>
+</div>
 
 <style>
-  article {
+  .card {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
@@ -143,13 +145,13 @@
     position: relative;
   }
 
-  article:hover {
+  .card:hover {
     border-color: color-mix(in srgb, currentColor 35%, transparent);
     background: color-mix(in srgb, var(--terminal-bg) 85%, transparent);
     transform: translateY(-2px);
   }
 
-  article.selected {
+  .card.selected {
     border-color: #22c55e;
     box-shadow: 0 12px 32px rgba(34, 197, 94, 0.2);
   }

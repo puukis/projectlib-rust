@@ -89,7 +89,8 @@ $: if (rootPath !== lastRootPath) {
   </header>
   <div class="nodes">
     {#each flattened as entry (entry.node.path)}
-      <div
+      <button
+        type="button"
         class:directory={entry.node.type === "directory"}
         class:file={entry.node.type === "file"}
         class:expanded={entry.node.type === "directory" && isExpanded(entry.node.path)}
@@ -97,6 +98,10 @@ $: if (rootPath !== lastRootPath) {
         style={`padding-left:${indent(entry.level)};`}
         on:click={() => open(entry.node)}
         on:contextmenu={(event) => showContext(event, entry.node)}
+        aria-current={selectedPath === entry.node.path ? "true" : undefined}
+        aria-expanded={
+          entry.node.type === "directory" ? String(isExpanded(entry.node.path)) : undefined
+        }
       >
         {#if entry.node.type === "directory"}
           <span class="chevron">{isExpanded(entry.node.path) ? "▼" : "▶"}</span>
@@ -104,7 +109,7 @@ $: if (rootPath !== lastRootPath) {
           <span class="chevron">•</span>
         {/if}
         <span class="label">{entry.node.name}</span>
-      </div>
+      </button>
     {/each}
   </div>
 </div>
@@ -215,15 +220,25 @@ $: if (rootPath !== lastRootPath) {
     overflow: auto;
   }
 
-  .nodes div {
+  .nodes button {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.25rem 0.5rem;
     cursor: pointer;
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    text-align: left;
   }
 
-  .nodes div.selected {
+  .nodes button:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.6);
+    outline-offset: 1px;
+  }
+
+  .nodes button.selected {
     background: rgba(255, 255, 255, 0.1);
   }
 
