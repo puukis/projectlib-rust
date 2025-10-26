@@ -22,20 +22,7 @@
       "preload": []
     },
     "shell": {
-      "scope": {
-        "allow": [
-          {
-            "name": "git",
-            "cmd": "git",
-            "args": true
-          },
-          {
-            "name": "git-powershell",
-            "cmd": "powershell.exe",
-            "args": true
-          }
-        ]
-      }
+      "open": true
     }
   }
 }

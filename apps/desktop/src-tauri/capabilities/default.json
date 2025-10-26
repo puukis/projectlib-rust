@@ -5,7 +5,35 @@
   "windows": ["*"],
   "permissions": [
     "core:default",
-    "shell:allow-execute",
-    "shell:allow-spawn"
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": true
+        },
+        {
+          "name": "git-powershell",
+          "cmd": "powershell.exe",
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": true
+        },
+        {
+          "name": "git-powershell",
+          "cmd": "powershell.exe",
+          "args": true
+        }
+      ]
+    }
   ]
 }
