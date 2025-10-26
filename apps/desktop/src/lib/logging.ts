@@ -1,41 +1,66 @@
 import { info, warn, error, debug, attachConsole } from '@tauri-apps/plugin-log';
 
+type KeyValues = Record<string, unknown>;
+
+function serializeKeyValues(values: KeyValues): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(values)
+      .filter(([_, value]) => value !== undefined)
+      .map(([key, value]) => {
+        if (value instanceof Error) return [key, value.message];
+        if (typeof value === 'string') return [key, value];
+        if (typeof value === 'number' || typeof value === 'boolean' || value === null)
+          return [key, String(value)];
+
+        try {
+          return [key, JSON.stringify(value)];
+        } catch {
+          return [key, String(value)];
+        }
+      }),
+  );
+}
+
 export async function setupLogging() {
   if (import.meta.env.DEV) await attachConsole();
   window.addEventListener('error', (e) => {
     if (e?.error) {
       error('ui:window:error', {
-        keyValues: { msg: String(e.error), file: e.filename, line: e.lineno },
+        keyValues: serializeKeyValues({
+          msg: String(e.error),
+          file: e.filename,
+          line: e.lineno,
+        }),
       });
     }
   });
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent | any) => {
     error('ui:promise:unhandled', {
-      keyValues: { reason: String(e?.reason ?? e) },
+      keyValues: serializeKeyValues({ reason: String(e?.reason ?? e) }),
     });
   });
 }
 
-export async function logOk(msg: string, kv: Record<string, any> = {}) {
-  await info(msg, { keyValues: kv });
+export async function logOk(msg: string, kv: KeyValues = {}) {
+  await info(msg, { keyValues: serializeKeyValues(kv) });
 }
 
-export async function logWarn(msg: string, kv: Record<string, any> = {}) {
-  await warn(msg, { keyValues: kv });
+export async function logWarn(msg: string, kv: KeyValues = {}) {
+  await warn(msg, { keyValues: serializeKeyValues(kv) });
 }
 
-export async function logErr(msg: string, kv: Record<string, any> = {}) {
-  await error(msg, { keyValues: kv });
+export async function logErr(msg: string, kv: KeyValues = {}) {
+  await error(msg, { keyValues: serializeKeyValues(kv) });
 }
 
-export async function logDbg(msg: string, kv: Record<string, any> = {}) {
-  if (import.meta.env.DEV) await debug(msg, { keyValues: kv });
+export async function logDbg(msg: string, kv: KeyValues = {}) {
+  if (import.meta.env.DEV) await debug(msg, { keyValues: serializeKeyValues(kv) });
 }
 
 export async function safeExec<T>(
   label: string,
   fn: () => Promise<T>,
-  ctx: Record<string, any> = {}
+  ctx: KeyValues = {}
 ): Promise<T> {
   const t0 = performance.now();
   try {
