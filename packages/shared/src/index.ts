@@ -7,3 +7,4 @@ export const PingSchema = z.object({
 export type Ping = z.infer<typeof PingSchema>;
 
 export * from "./git";
+export * from "./runs";
