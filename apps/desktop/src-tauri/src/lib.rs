@@ -21,7 +21,7 @@ use log::{error, info};
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, State};
 #[cfg(feature = "desktop")]
-use tauri_plugin_log::{Builder as LogBuilder, LogTarget};
+use tauri_plugin_log::{Builder as LogBuilder, Target as LogTarget};
 
 #[cfg(feature = "desktop")]
 const DATABASE_FILE: &str = "projectlib.db";
