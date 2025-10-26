@@ -80,7 +80,9 @@ pub fn run() {
             LogBuilder::new()
                 .targets([
                     LogTarget::new(LogTargetKind::Stdout),
-                    LogTarget::new(LogTargetKind::LogDir { file_name: None }),
+                    LogTarget::new(LogTargetKind::LogDir {
+                        file_name: Some("projectlib.log".into()),
+                    }),
                 ])
                 .level(log::LevelFilter::Info)
                 .build(),
