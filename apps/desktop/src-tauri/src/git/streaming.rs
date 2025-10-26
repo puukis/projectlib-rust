@@ -61,6 +61,7 @@ pub async fn run_streaming_command(
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let event_name = STREAM_EVENT.to_string();
     let app_handle = app.clone();
+    let stream_command_id = command_id.clone();
 
     tauri::async_runtime::spawn(async move {
         let _cleanup_guard = cleanup;
@@ -68,7 +69,7 @@ pub async fn run_streaming_command(
             match event {
                 CommandEvent::Stdout(line) => {
                     let payload = GitStreamEvent {
-                        command_id: command_id.clone(),
+                        command_id: stream_command_id.clone(),
                         kind: GitStreamEventKind::Stdout,
                         data: Some(String::from_utf8_lossy(&line).to_string()),
                         exit_code: None,
@@ -78,7 +79,7 @@ pub async fn run_streaming_command(
                 }
                 CommandEvent::Stderr(line) => {
                     let payload = GitStreamEvent {
-                        command_id: command_id.clone(),
+                        command_id: stream_command_id.clone(),
                         kind: GitStreamEventKind::Stderr,
                         data: Some(String::from_utf8_lossy(&line).to_string()),
                         exit_code: None,
@@ -89,7 +90,7 @@ pub async fn run_streaming_command(
                 CommandEvent::Terminated(payload) => {
                     let success = payload.code.unwrap_or(-1) == 0;
                     let payload = GitStreamEvent {
-                        command_id: command_id.clone(),
+                        command_id: stream_command_id.clone(),
                         kind: GitStreamEventKind::Completed,
                         data: None,
                         exit_code: payload.code,
@@ -99,7 +100,7 @@ pub async fn run_streaming_command(
                 }
                 CommandEvent::Error(message) => {
                     let payload = GitStreamEvent {
-                        command_id: command_id.clone(),
+                        command_id: stream_command_id.clone(),
                         kind: GitStreamEventKind::Error,
                         data: Some(message),
                         exit_code: None,
@@ -107,6 +108,7 @@ pub async fn run_streaming_command(
                     };
                     let _ = app_handle.emit(&event_name, payload);
                 }
+                _ => {}
             }
         }
     });
