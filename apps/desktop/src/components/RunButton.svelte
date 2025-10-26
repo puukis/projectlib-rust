@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte";
   import type { RunLifecycleStatus } from "../lib/run";
+
+  const dispatch = createEventDispatcher<{ click: void }>();
 
   export let projectName: string;
   export let status: RunLifecycleStatus = "idle";
@@ -12,6 +15,11 @@
   $: isRunning = status === "running";
   $: label = isRunning ? "Stop" : "Run";
   $: ariaLabel = `${label} ${projectName}`;
+
+  function handleClick(event: MouseEvent) {
+    event.stopPropagation();
+    dispatch("click");
+  }
 </script>
 
 <button
@@ -22,6 +30,7 @@
   disabled={disabled}
   aria-label={ariaLabel}
   title={`${label} (⏎)`}
+  on:click={handleClick}
 >
   {#if isStarting}
     <span class="spinner" aria-hidden="true"></span>
