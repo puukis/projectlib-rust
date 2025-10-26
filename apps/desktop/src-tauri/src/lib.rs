@@ -1,20 +1,27 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(feature = "desktop")]
 mod git;
-mod migrations;
+pub mod migrations;
+#[cfg(feature = "desktop")]
 mod runs;
-mod terminal;
+pub mod terminal;
 
+#[cfg(feature = "desktop")]
 use std::{error::Error, fs, io};
 
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, State};
 
+#[cfg(feature = "desktop")]
 const DATABASE_FILE: &str = "projectlib.db";
 
+#[cfg(feature = "desktop")]
 struct DatabaseConfig {
     url: String,
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 async fn ping(app: AppHandle, message: String) -> Result<String, String> {
     Ok(format!(
@@ -23,11 +30,13 @@ async fn ping(app: AppHandle, message: String) -> Result<String, String> {
     ))
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn resolve_database_url(config: State<DatabaseConfig>) -> String {
     config.url.clone()
 }
 
+#[cfg(feature = "desktop")]
 fn prepare_database(app: &AppHandle) -> Result<String, Box<dyn Error>> {
     let data_dir = app.path().app_data_dir()?;
     fs::create_dir_all(&data_dir)?;
@@ -43,6 +52,7 @@ fn prepare_database(app: &AppHandle) -> Result<String, Box<dyn Error>> {
     Ok(format!("sqlite:{path_str}"))
 }
 
+#[cfg(feature = "desktop")]
 pub fn run() {
     let context = tauri::generate_context!();
     tauri::Builder::default()
@@ -56,9 +66,14 @@ pub fn run() {
 
             app.manage(git::service::GitService::new());
 
+            let migrations: Vec<tauri_plugin_sql::Migration> = migrations::definitions()
+                .into_iter()
+                .map(Into::into)
+                .collect();
+
             app_handle.plugin(
                 tauri_plugin_sql::Builder::new()
-                    .add_migrations(&db_url, migrations::definitions())
+                    .add_migrations(&db_url, migrations)
                     .build(),
             )?;
 
@@ -89,4 +104,9 @@ pub fn run() {
         ])
         .run(context)
         .expect("error while running Projectlib");
+}
+
+#[cfg(not(feature = "desktop"))]
+pub fn run() {
+    panic!("desktop feature is required to run the Tauri application");
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Shell } from "@projectlib/ui";
   import {
@@ -12,7 +12,20 @@
     type RunConfig
   } from "@projectlib/db";
   import TerminalTabs from "./components/TerminalTabs.svelte";
+  import ProjectCard from "./components/ProjectCard.svelte";
+  import RunButton from "./components/RunButton.svelte";
+  import RunConfigModal from "./components/RunConfigModal.svelte";
+  import RunToast from "./components/RunToast.svelte";
   import { terminalService } from "./lib/terminal";
+  import {
+    MissingRunConfigurationError,
+    RunAlreadyInProgressError,
+    runService,
+    type RunState,
+    type RunToastMessage,
+  } from "./lib/run";
+  import type { RunOverrides } from "./lib/run";
+  import { open as openPath } from "@tauri-apps/plugin-shell";
   import {
     PingSchema,
     type Ping,
@@ -62,6 +75,30 @@
   let loadingRunsFor: string | null = null;
   let lastRunsProjectId: string | null = null;
 
+  type RunModalMode = "run" | "runWithArgs" | "edit";
+  type RunModalState = {
+    project: Project;
+    initialCommand: string;
+    initialArgs: string;
+    initialEnv: string;
+    initialCwd: string;
+    remember: boolean;
+    mode: RunModalMode;
+  };
+
+  let runStateMap = new Map<string, RunState>();
+  let runToast: RunToastMessage | null = null;
+  let focusTabId: string | null = null;
+  let runControlError: string | null = null;
+  let runModal: RunModalState | null = null;
+
+  const unsubscribeRunStates = runService.runStates.subscribe((value) => {
+    runStateMap = value;
+  });
+  const unsubscribeToasts = runService.toasts.subscribe((value) => {
+    runToast = value;
+  });
+
   onMount(async () => {
     try {
       const response = await invoke<string>("ping", { message: "Hello from Svelte" });
@@ -69,9 +106,15 @@
       const info = await invoke("git_path_info");
       gitInfo = GitPathInfoSchema.parse(info);
       await loadProjects();
+      await runService.loadPersistedStates(projects);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
+  });
+
+  onDestroy(() => {
+    unsubscribeRunStates();
+    unsubscribeToasts();
   });
 
   async function loadProjects() {
@@ -79,6 +122,7 @@
       projectError = null;
       const loaded = await listProjects();
       projects = loaded;
+      runService.syncProjects(projects);
       if (projects.length > 0) {
         const firstId = projects[0].id;
         if (
@@ -170,6 +214,164 @@
         loadingRunsFor = null;
       }
     }
+  }
+
+  function getRunState(projectId: string): RunState {
+    return runStateMap.get(projectId) ?? runService.getState(projectId);
+  }
+
+  async function focusTerminal(tabId: string) {
+    focusTabId = null;
+    await tick();
+    focusTabId = tabId;
+  }
+
+  function openRunModalForProject(
+    project: Project,
+    mode: RunModalMode,
+    overrides: RunOverrides = {},
+  ) {
+    const state = getRunState(project.id);
+    const command = overrides.command ?? state.lastCommand ?? "";
+    const args = overrides.args ?? state.lastArgs ?? [];
+    const env = overrides.env ?? state.lastEnv ?? {};
+    const cwd = overrides.cwd ?? state.lastCwd ?? project.path;
+    const rememberDefault =
+      mode === "run" ? true : mode === "runWithArgs" ? overrides.remember ?? false : true;
+
+    runModal = {
+      project,
+      initialCommand: command,
+      initialArgs: args.join("\n"),
+      initialEnv: formatEnv(env),
+      initialCwd: cwd,
+      remember: rememberDefault,
+      mode,
+    };
+  }
+
+  async function handleProjectRun(project: Project, overrides: RunOverrides = {}) {
+    const state = getRunState(project.id);
+    if (state.status === "running" || state.status === "starting") {
+      const shouldStop = confirm(`Stop ${project.name}?`);
+      if (shouldStop) {
+        await runService.stop(project.id);
+      }
+      return;
+    }
+
+    runControlError = null;
+    selectedProjectId = project.id;
+
+    try {
+      const tabId = await runService.start(project, overrides);
+      await focusTerminal(tabId);
+    } catch (err) {
+      if (err instanceof MissingRunConfigurationError) {
+        openRunModalForProject(project, "run", overrides);
+      } else if (err instanceof RunAlreadyInProgressError) {
+        // ignore; state guard above should prevent this
+      } else {
+        runControlError = err instanceof Error ? err.message : String(err);
+      }
+    }
+  }
+
+  async function handleRunModalSubmit(event: CustomEvent<{
+    command: string;
+    argsText: string;
+    envText: string;
+    cwd: string;
+    remember: boolean;
+  }>) {
+    if (!runModal) {
+      return;
+    }
+
+    const { project, mode } = runModal;
+    runModal = null;
+
+    const command = event.detail.command.trim();
+    const args = parseArgs(event.detail.argsText);
+    const { env, error: envError } = parseEnv(event.detail.envText);
+    if (envError) {
+      runControlError = envError;
+      return;
+    }
+
+    const cwdInput = event.detail.cwd.trim();
+    const cwd = cwdInput || project.path;
+
+    const state = getRunState(project.id);
+    let runId = state.lastRunId ?? null;
+    const remember = mode === "edit" ? true : event.detail.remember;
+
+    if (remember) {
+      const now = Date.now();
+      runId = runId ?? crypto.randomUUID();
+      const runConfig: RunConfig = {
+        id: runId,
+        projectId: project.id,
+        command,
+        args,
+        env,
+        cwd,
+        lastExitCode: null,
+        updatedAt: now,
+      };
+      try {
+        await runService.rememberConfiguration(project, runConfig);
+        await loadRunsForProject(project.id);
+      } catch (err) {
+        runControlError = err instanceof Error ? err.message : String(err);
+        return;
+      }
+    }
+
+    if (mode !== "edit") {
+      await handleProjectRun(project, { command, args, env, cwd, runId });
+    }
+  }
+
+  function handleRunModalCancel() {
+    runModal = null;
+  }
+
+  function handleRunWithArgs(project: Project) {
+    runControlError = null;
+    openRunModalForProject(project, "runWithArgs", { remember: false });
+  }
+
+  function handleEditRunConfig(project: Project) {
+    runControlError = null;
+    openRunModalForProject(project, "edit");
+  }
+
+  async function handleStopRun(project: Project) {
+    await runService.stop(project.id);
+  }
+
+  async function handleOpenFolder(project: Project) {
+    try {
+      await openPath(project.path);
+    } catch (err) {
+      runControlError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function handleToastAction() {
+    if (!runToast) {
+      return;
+    }
+    selectedProjectId = runToast.projectId;
+    if (runToast.tabId) {
+      focusTerminal(runToast.tabId);
+    }
+    runService.dismissToast();
+  }
+
+  function handleToastDismiss() {
+    runService.dismissToast();
   }
 
   function updateDraftField(id: string, field: keyof RunDraft, value: string) {
@@ -526,6 +728,17 @@
 
 <main>
   <Shell title="Projectlib Desktop">
+    {#if runToast}
+      <div class="toast-container">
+        <RunToast
+          message={runToast.message}
+          actionLabel={runToast.actionLabel}
+          on:action={handleToastAction}
+          on:dismiss={handleToastDismiss}
+        />
+      </div>
+    {/if}
+
     {#if error}
       <p>Failed to reach backend: {error}</p>
     {:else}
@@ -612,6 +825,35 @@
     </section>
 
     <section class="panel">
+      <div class="section-header">
+        <h2>Projects</h2>
+        {#if runControlError}
+          <p class="error inline">{runControlError}</p>
+        {/if}
+      </div>
+      {#if projects.length === 0}
+        <p>No projects saved yet.</p>
+      {:else}
+        <div class="project-grid">
+          {#each projects as project (project.id)}
+            <ProjectCard
+              {project}
+              selected={project.id === selectedProjectId}
+              state={getRunState(project.id)}
+              on:select={() => (selectedProjectId = project.id)}
+              on:run={() => handleProjectRun(project)}
+              on:runWithArgs={() => handleRunWithArgs(project)}
+              on:editConfig={() => handleEditRunConfig(project)}
+              on:openTerminal={() => handleCreateTerminal(project.id)}
+              on:openFolder={() => handleOpenFolder(project)}
+              on:stop={() => handleStopRun(project)}
+            />
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    <section class="panel">
       <h2>Project terminals</h2>
       {#if projectError}
         <p class="error">{projectError}</p>
@@ -621,12 +863,23 @@
           bind:selectedProjectId
           creatingError={terminalError}
           onCreateTab={handleCreateTerminal}
+          focusTabId={focusTabId}
         />
       {/if}
     </section>
 
     <section class="panel">
-      <h2>Run commands</h2>
+      <div class="section-header">
+        <h2>Run commands</h2>
+        {#if selectedProject}
+          <div class="run-header-control" on:click|stopPropagation={() => handleProjectRun(selectedProject)}>
+            <RunButton
+              projectName={selectedProject.name}
+              status={getRunState(selectedProject.id).status}
+            />
+          </div>
+        {/if}
+      </div>
       {#if !selectedProject}
         <p>Select a project to configure run commands.</p>
       {:else}
@@ -726,6 +979,20 @@
     </section>
   </Shell>
 </main>
+
+{#if runModal}
+  <RunConfigModal
+    projectName={runModal.project.name}
+    initialCommand={runModal.initialCommand}
+    initialArgs={runModal.initialArgs}
+    initialEnv={runModal.initialEnv}
+    initialCwd={runModal.initialCwd}
+    remember={runModal.remember}
+    mode={runModal.mode === "edit" ? "edit" : "run"}
+    on:submit={handleRunModalSubmit}
+    on:cancel={handleRunModalCancel}
+  />
+{/if}
 
 <style>
   p {
@@ -850,6 +1117,34 @@
   .run-buttons {
     display: flex;
     gap: 0.5rem;
+  }
+
+  .toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1100;
+  }
+
+  .project-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .section-header .error.inline {
+    margin: 0;
+  }
+
+  .run-header-control {
+    display: inline-flex;
   }
 
   .unsaved {

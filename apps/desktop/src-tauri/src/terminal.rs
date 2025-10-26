@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -8,7 +9,7 @@ pub struct ShellInfo {
     pub args: Vec<String>,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn terminal_default_shell() -> Result<ShellInfo, String> {
     default_shell().map_err(|err| err.to_string())
 }

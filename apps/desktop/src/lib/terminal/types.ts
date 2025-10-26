@@ -10,6 +10,8 @@ export interface ShellInfo {
   args: string[];
 }
 
+export type TerminalTabKind = "shell" | "run";
+
 export interface TerminalTab {
   id: string;
   projectId: string;
@@ -19,4 +21,5 @@ export interface TerminalTab {
   pty: IPty;
   terminal: Terminal;
   disposables: Disposable[];
+  kind: TerminalTabKind;
 }

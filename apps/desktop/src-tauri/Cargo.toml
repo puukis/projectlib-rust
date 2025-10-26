@@ -8,11 +8,20 @@ description = "Projectlib Desktop App"
 name = "desktop_lib"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+desktop = [
+    "dep:tauri",
+    "dep:tauri-plugin-sql",
+    "dep:tauri-plugin-shell",
+    "dep:tauri-plugin-pty",
+]
+
 [dependencies]
-tauri = { version = "2.9.1", features = ["wry"] }
-tauri-plugin-sql = { version = "2", features = ["sqlite"] }
-tauri-plugin-shell = "2.3.1"
-tauri-plugin-pty = "0.1.1"
+tauri = { version = "2.9.1", features = ["wry"], optional = true }
+tauri-plugin-sql = { version = "2", features = ["sqlite"], optional = true }
+tauri-plugin-shell = { version = "2.3.1", optional = true }
+tauri-plugin-pty = { version = "0.1.1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"

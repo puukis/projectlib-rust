@@ -29,3 +29,84 @@ main {
   min-height: 100vh;
   padding: 2rem;
 }
+
+.run-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.45rem 0.95rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  background-color: #22c55e;
+  color: white;
+  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.25);
+}
+
+.run-button:hover:not(:disabled) {
+  background-color: #16a34a;
+  box-shadow: 0 10px 20px rgba(22, 163, 74, 0.3);
+}
+
+.run-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.35);
+}
+
+.run-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+  box-shadow: none;
+}
+
+.run-button.running {
+  background-color: #ef4444;
+  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25);
+}
+
+.run-button.running:hover:not(:disabled) {
+  background-color: #dc2626;
+  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.3);
+}
+
+.run-button.running:focus-visible {
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35);
+}
+
+.run-button.running svg {
+  animation: run-button-pulse 1.6s infinite;
+}
+
+.run-button svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: currentColor;
+}
+
+.run-button .spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: white;
+  animation: run-button-spin 0.9s linear infinite;
+}
+
+@keyframes run-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes run-button-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}

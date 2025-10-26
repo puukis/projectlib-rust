@@ -8,6 +8,7 @@
   export let selectedProjectId: string | null = null;
   export let creatingError: string | null = null;
   export let onCreateTab: (projectId: string) => Promise<void>;
+  export let focusTabId: string | null = null;
 
   const tabsStore = terminalService.tabs;
   const tabsByProject = derived(tabsStore, ($tabsStore) => {
@@ -36,6 +37,10 @@
 
   let tabsByProjectMap: Map<string, TerminalTab[]> | undefined;
   $: tabsByProjectMap = $tabsByProject;
+
+  $: if (focusTabId && currentProjectTabs.some((tab) => tab.id === focusTabId)) {
+    activeTabId = focusTabId;
+  }
 
   function handleSelectTab(tabId: string) {
     activeTabId = tabId;
