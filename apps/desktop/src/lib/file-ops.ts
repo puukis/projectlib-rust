@@ -1,4 +1,4 @@
-import { readTextFile, writeTextFile } from '@tauri-apps/api/fs';
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { safeExec } from './logging';
 
 export async function readFileSafe(path: string) {
