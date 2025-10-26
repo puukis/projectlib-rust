@@ -24,7 +24,8 @@
     showMenu = false;
   }
 
-  function handleRun() {
+  function handleRun(event?: MouseEvent) {
+    event?.stopPropagation();
     dispatch("run");
   }
 
@@ -83,7 +84,7 @@
       <RunButton
         projectName={project.name}
         status={state.status}
-        on:click|stopPropagation={handleRun}
+        on:click={handleRun}
       />
     </div>
   </header>
